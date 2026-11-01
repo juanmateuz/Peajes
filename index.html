@@ -847,6 +847,7 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
       <div><label>Rendimiento (km/gal)</label><input class="in" id="kmg" type="number" inputmode="numeric" placeholder="ej. 40"></div>
     </div>
     <label class="check"><input type="checkbox" id="avoid"> Probar también una ruta evitando peajes (según OpenStreetMap, puede ser incompleto)</label>
+    <div style="margin-top:10px"><label style="font-size:12px;color:var(--mute)">Peajes sin tarifa confirmada (Cat. I)</label><select id="unv"><option value="est">Usar $17.500 (estimado)</option><option value="data">Usar dato de Supertransporte</option></select></div>
     <label class="check"><input type="checkbox" id="diff"> Tengo <b>tarifa diferencial</b> de Autopistas del Café (residente de Manizales, Chinchiná, Villamaría, Palestina, Santa Rosa o Circasia): Tarapacá I, II y Circasia a $700. Debes estar inscrito con el concesionario.</label>
     <div style="margin-top:10px"><label style="font-size:12px;color:var(--mute)">Distancia máxima peaje–ruta (m)</label><input class="in" id="tol" type="number" value="120"></div>
   </details>
@@ -979,10 +980,12 @@ function isCatI(){ const f=FIELDS.find(x=>x.name===$('cat').value); return f&&ca
 function priceOf(t,cat){
   const raw=typeof t.attrs[cat]==='number'?t.attrs[cat]:null;
   if(!isCatI()) return {v:raw,raw};
-  const e=verifOf(t); if(!e) return {v:raw,raw};
+  const e=verifOf(t);
+  if(!e){ const mode=$('unv')?$('unv').value:'est'; return mode==='est'?{v:UNV_EST,raw,est:true}:{v:raw,raw}; }
   if(e.diff && $('diff') && $('diff').checked) return {v:700,raw,e,isDiff:true};
   return {v:e.v,raw,e};
 }
+const UNV_EST=17500;
 let V=null;
 let TOLLS=[], FIELDS=[], NAME_F=null, A=null, B=null, ROUTES=[], SEL=0;
 let ME=null, carMarker=null, watchId=null, lastMe=null;
@@ -1255,6 +1258,8 @@ $('go').onclick=async()=>{
   finally{ $('go').textContent='Calcular ruta'; }
 };
 $('cat').onchange=()=>{ try{localStorage.setItem('peajes_cat',$('cat').value);}catch(e){} if(ROUTES.length) renderResults(); };
+try{ const u=localStorage.getItem('peajes_unv'); if(u) $('unv').value=u; }catch(e){}
+$('unv').onchange=()=>{ try{localStorage.setItem('peajes_unv',$('unv').value);}catch(e){} if(ROUTES.length) renderResults(); };
 try{ $('diff').checked=localStorage.getItem('peajes_diff')==='1'; }catch(e){}
 $('diff').onchange=()=>{ try{localStorage.setItem('peajes_diff',$('diff').checked?'1':'0');}catch(e){} if(ROUTES.length) renderResults(); };
 ['gal','kmg'].forEach(id=>$(id).addEventListener('input',()=>{ if(ROUTES.length) renderResults(); }));
@@ -1302,8 +1307,9 @@ function renderResults(sel,fit){
 
   let tl=`<h3>Peajes en el camino <span>${s.hits.length}</span></h3>`;
   if(!s.hits.length) tl+=`<p class="foot">${TOLLS.length?'No se detectaron peajes a menos de '+tol+' m de esta ruta.':'Aún no hay datos de peajes cargados.'}</p>`;
-  else tl+=s.hits.map((x,k)=>`<div class="ti" data-k="${k}"><div class="n">${k+1}</div><div><div class="nm">${esc(x.t.name)}</div><div class="sm">km ${x.km.toFixed(0)}${x.dup?' · '+x.dup+' casetas':''}${x.again?' · pasas 2 veces':''}${x.dist>60?' · a '+Math.round(x.dist)+' m de la vía':''}</div></div><div class="pr">${(()=>{ const p=priceOf(x.t,cat); if(!p.e) return fmt(p.v)+'<div class="sm" style="text-align:right">sin verificar</div>';
-    const chg=p.raw!=null&&p.raw!==p.v; return `${fmt(p.v)} <span title="${esc(p.e.src+' · '+p.e.d)}" style="color:var(--ok)">✓</span><div class="sm" style="text-align:right">${p.isDiff?'diferencial':esc(p.e.d)}${chg?' · datos: '+fmt(p.raw):''}</div>${p.e.warn?'<div class="sm" style="color:var(--warn);text-align:right;max-width:150px">'+esc(p.e.warn)+'</div>':''}`; })()}</div></div>`).join('')+`<div class="total"><span>Total peajes</span><span>${fmt(s.tollCost)}</span></div><p class="foot">✓ = tarifa Cat. I verificada en ANI o prensa (fecha al lado). “sin verificar” = valor del tablero de Supertransporte. ${isCatI()?'':'<b>Las tarifas verificadas solo aplican a Cat. I.</b>'}</p>`;
+  else tl+=s.hits.map((x,k)=>`<div class="ti" data-k="${k}"><div class="n">${k+1}</div><div><div class="nm">${esc(x.t.name)}</div><div class="sm">km ${x.km.toFixed(0)}${x.dup?' · '+x.dup+' casetas':''}${x.again?' · pasas 2 veces':''}${x.dist>60?' · a '+Math.round(x.dist)+' m de la vía':''}</div></div><div class="pr">${(()=>{ const p=priceOf(x.t,cat); if(p.est) return `${fmt(p.v)}<div class="sm" style="text-align:right;color:var(--warn)">estimado${p.raw!=null?' · datos: '+fmt(p.raw):''}</div>`;
+    if(!p.e) return fmt(p.v)+'<div class="sm" style="text-align:right">sin verificar</div>';
+    const chg=p.raw!=null&&p.raw!==p.v; return `${fmt(p.v)} <span title="${esc(p.e.src+' · '+p.e.d)}" style="color:var(--ok)">✓</span><div class="sm" style="text-align:right">${p.isDiff?'diferencial':esc(p.e.d)}${chg?' · datos: '+fmt(p.raw):''}</div>${p.e.warn?'<div class="sm" style="color:var(--warn);text-align:right;max-width:150px">'+esc(p.e.warn)+'</div>':''}`; })()}</div></div>`).join('')+`<div class="total"><span>Total peajes</span><span>${fmt(s.tollCost)}</span></div><p class="foot">✓ = tarifa Cat. I verificada en ANI o prensa (fecha al lado). <span style="color:var(--warn)">estimado</span> = peaje sin tarifa confirmada, calculado a $17.500. “sin verificar” = valor del tablero de Supertransporte. ${isCatI()?'':'<b>Las tarifas verificadas solo aplican a Cat. I.</b>'}</p>`;
   $('tl').innerHTML=tl;
   $('tl').querySelectorAll('.ti').forEach(e=>e.onclick=()=>{ const x=s.hits[+e.dataset.k]; map.setView([x.t.lat,x.t.lon],17); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); });
 }
