@@ -696,7 +696,7 @@ aside{overflow:auto;background:var(--card);border-right:1px solid var(--line);pa
 .trip{position:relative;background:#f4f5f7;border-radius:var(--r);padding:6px 6px 6px 34px}
 .trip:before{content:"";position:absolute;left:17px;top:24px;bottom:24px;border-left:2px dotted #c3c7d0}
 .dot{position:absolute;left:11px;width:14px;height:14px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px #d0d3da}
-.dot.a{top:17px;background:var(--ink)}.dot.b{bottom:17px;background:var(--toll);border-radius:4px}
+.dot.a{top:17px;background:var(--ink)}.dot.v{top:50%;margin-top:-6px;width:12px;height:12px;left:12px;background:#fff;border:2px solid #8a8f9c;box-shadow:none}.dot.b{bottom:17px;background:var(--toll);border-radius:4px}
 .field{position:relative;display:flex;align-items:center}
 .field+.field{border-top:1px solid #e6e7eb}
 .field input{flex:1;border:0;background:transparent;padding:12px 8px;font:inherit;font-size:15px;color:var(--ink);outline:none;min-width:0}
@@ -798,11 +798,16 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
   </div>
 
   <div class="trip">
-    <span class="dot a"></span><span class="dot b"></span>
+    <span class="dot a"></span><span class="dot v"></span><span class="dot b"></span>
     <div class="field">
       <input id="orig" placeholder="¿Desde dónde?" autocomplete="off">
       <button class="iconbtn" id="geo" type="button" title="Usar mi ubicación"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>Mi ubicación</button>
       <div class="sugs" id="sorig" hidden></div>
+    </div>
+    <div class="field">
+      <input id="via" placeholder="Pasar por… (opcional, ej: Irra, La Felisa)" autocomplete="off" style="font-size:13.5px">
+      <button class="iconbtn" id="viaclr" type="button" title="Quitar" style="color:var(--mute)">✕</button>
+      <div class="sugs" id="svia" hidden></div>
     </div>
     <div class="field">
       <input id="dest" placeholder="¿Hacia dónde?" autocomplete="off">
@@ -906,6 +911,7 @@ const carIcon = deg => L.divIcon({className:'',iconSize:[40,40],iconAnchor:[20,2
   html:`<div style="position:relative;width:40px;height:40px"><div class="pulse"></div><div style="transform:rotate(${deg||0}deg);width:40px;height:40px">${CAR_SVG}</div></div>`});
 const endIcon = b => L.divIcon({className:'',iconSize:[18,18],iconAnchor:[9,9],html:`<div class="endpin ${b?'b':''}"></div>`});
 
+let V=null;
 let TOLLS=[], FIELDS=[], NAME_F=null, A=null, B=null, ROUTES=[], SEL=0;
 let ME=null, carMarker=null, watchId=null, lastMe=null;
 
@@ -1009,7 +1015,7 @@ async function boot(force=false){
 // ---------- Búsqueda de lugares ----------
 function setupAC(inp,box,which){
   let tm;
-  inp.addEventListener('input',()=>{ if(which==='A')A=null; else B=null; clearTimeout(tm); const q=inp.value.trim(); if(q.length<3){box.hidden=true;return;}
+  inp.addEventListener('input',()=>{ if(which==='A')A=null; else if(which==='V')V=null; else B=null; clearTimeout(tm); const q=inp.value.trim(); if(q.length<3){box.hidden=true;return;}
     tm=setTimeout(async()=>{ try{
       const d=await (await fetch(`${NOMI}/search?format=json&countrycodes=co&limit=6&accept-language=es&q=${encodeURIComponent(q)}`)).json(); box.innerHTML='';
       d.forEach(p=>{ const parts=p.display_name.split(','); const e=document.createElement('div'); e.innerHTML=`<b>${esc(parts[0])}</b>${esc(parts.slice(1,4).join(','))}`;
@@ -1018,9 +1024,10 @@ function setupAC(inp,box,which){
   document.addEventListener('click',ev=>{ if(!box.contains(ev.target)&&ev.target!==inp) box.hidden=true; });
 }
 async function geocode(q){ const d=await (await fetch(`${NOMI}/search?format=json&countrycodes=co&limit=1&accept-language=es&q=${encodeURIComponent(q)}`)).json(); if(!d.length) throw new Error('No encontré “'+q+'”'); return {lat:+d[0].lat,lon:+d[0].lon,label:d[0].display_name}; }
-function setPoint(w,p){ if(w==='A')A=p; else B=p; drawPins(); }
+function setPoint(w,p){ if(w==='A')A=p; else if(w==='V')V=p; else B=p; drawPins(); }
 function drawPins(){ pinLayer.clearLayers();
   if(A && !A.isMe) L.marker([A.lat,A.lon],{icon:endIcon(false)}).addTo(pinLayer);
+  if(V) L.marker([V.lat,V.lon],{icon:L.divIcon({className:'',iconSize:[14,14],iconAnchor:[7,7],html:'<div style="width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #111318;box-shadow:0 2px 6px rgba(0,0,0,.3)"></div>'})}).bindTooltip('Pasar por').addTo(pinLayer);
   if(B) L.marker([B.lat,B.lon],{icon:endIcon(true)}).addTo(pinLayer); }
 map.on('click',e=>{ const p={lat:e.latlng.lat,lon:e.latlng.lng,label:e.latlng.lat.toFixed(4)+', '+e.latlng.lng.toFixed(4)};
   if(!A||(A&&B)){ A=p;B=null;$('orig').value=p.label;$('dest').value=''; } else { B=p;$('dest').value=p.label; } drawPins(); });
@@ -1131,19 +1138,22 @@ function tollsOnRoute(coords,tol){
 }
 
 // ---------- Rutas ----------
-async function osrm(a,b,extra=''){ const d=await (await fetch(`${OSRM}/route/v1/driving/${a.lon},${a.lat};${b.lon},${b.lat}?overview=full&geometries=geojson&alternatives=3${extra}`)).json(); if(d.code!=='Ok') throw new Error(d.message||d.code); return d.routes; }
+async function osrm(a,b,extra='',via=null){ const pts=[a,via,b].filter(Boolean).map(p=>`${p.lon},${p.lat}`).join(';'); const d=await (await fetch(`${OSRM}/route/v1/driving/${pts}?overview=full&geometries=geojson&alternatives=${via?'false':'3'}${extra}`)).json(); if(d.code!=='Ok') throw new Error(d.message||d.code); return d.routes; }
 $('go').onclick=async()=>{
-  $('sorig').hidden=true; $('sdest').hidden=true; $('go').textContent='Calculando…';
+  $('sorig').hidden=true; $('sdest').hidden=true; $('svia').hidden=true; $('go').textContent='Calculando…';
   try{
     if(!A&&$('orig').value.trim()) A=await geocode($('orig').value.trim());
     if(!B&&$('dest').value.trim()) B=await geocode($('dest').value.trim());
     if(!A||!B){ st('Indica origen y destino.','err'); return; }
+    if(!V&&$('via').value.trim()) V=await geocode($('via').value.trim());
     drawPins(); st('');
-    let routes=(await osrm(A,B)).map((r,i)=>({...r,label:i===0?'Ruta recomendada':'Alternativa '+i}));
+    let routes=[];
+    if(V){ const vr=await osrm(A,B,'',V); if(vr[0]) routes.push({...vr[0],label:'Por '+($('via').value.split(',')[0]||'tu parada'),forced:true}); }
+    routes=routes.concat((await osrm(A,B)).map((r,i)=>({...r,label:i===0?'Automática (OSRM)':'Alternativa '+i})));
     if($('avoid').checked){ try{ const nr=await osrm(A,B,'&exclude=toll'); if(nr[0]) routes.push({...nr[0],label:'Evitando peajes'}); }catch(e){} }
     ROUTES=[]; for(const r of routes){ if(!ROUTES.some(x=>Math.abs(x.distance-r.distance)<500&&Math.abs(x.duration-r.duration)<120)) ROUTES.push(r); }
     ROUTES.forEach(r=>r.coords=r.geometry.coordinates.map(c=>[c[1],c[0]]));
-    renderResults(pickByPrio(),true);
+    renderResults(ROUTES[0]&&ROUTES[0].forced?0:pickByPrio(),true);
   }catch(e){ st('No pude calcular la ruta: '+esc(e.message),'err'); }
   finally{ $('go').textContent='Calcular ruta'; }
 };
@@ -1185,6 +1195,7 @@ function renderResults(sel,fit){
       <div class="cost"><b>${fmt(r.fuel!=null?r.total:r.tollCost)}</b><span>${r.fuel!=null?'peajes + combustible':'en peajes'}</span></div></div>
       <div class="meta"><span>${(r.distance/1000).toFixed(0)} <i>km</i></span><span>${r.hits.length} <i>peajes</i></span><span>${fmt(r.tollCost)} <i>peajes</i></span>${r.fuel!=null?`<span>${fmt(r.fuel)} <i>combustible</i></span>`:''}</div>
       ${r.missing?`<div class="warnline">${r.missing} peaje(s) sin tarifa para esta categoría</div>`:''}</div>`; }).join('');
+  $('routes').insertAdjacentHTML('beforeend',`<p class="foot" style="margin:2px 2px 0">Los tiempos son estimados sin tráfico. Si sabes que una vía es más fluida, escríbela en <b>“Pasar por”</b> para forzar la ruta.</p>`);
   $('routes').querySelectorAll('.rc').forEach(c=>c.onclick=()=>renderResults(+c.dataset.i));
 
   let tl=`<h3>Peajes en el camino <span>${s.hits.length}</span></h3>`;
@@ -1195,7 +1206,7 @@ function renderResults(sel,fit){
 }
 
 // ---------- Init ----------
-setupAC($('orig'),$('sorig'),'A'); setupAC($('dest'),$('sdest'),'B');
+setupAC($('orig'),$('sorig'),'A'); setupAC($('via'),$('svia'),'V'); $('viaclr').onclick=()=>{ V=null; $('via').value=''; drawPins(); if(A&&B) $('go').click(); }; setupAC($('dest'),$('sdest'),'B');
 $('file').onchange=async e=>{ const f=e.target.files[0]; if(!f) return; const t=await f.text();
   try{ const d=/\.csv$/i.test(f.name)?parseCSV(t):parseGeoJSON(JSON.parse(t)); if(!d.tolls.length) throw new Error('sin puntos'); applyData(d); }catch(err){ st('No pude leer el archivo: '+esc(err.message),'err'); } };
 $('reload').onclick=()=>boot(true);
