@@ -766,6 +766,17 @@ details[open] summary:after{content:"–"}
 .foot{font-size:11.5px;color:var(--mute);margin-top:12px;line-height:1.5}
 code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
 
+/* Tabla de datos */
+#dmodal{position:fixed;inset:0;z-index:3000;background:rgba(17,19,24,.45);display:flex;align-items:flex-end;justify-content:center}
+#dmodal[hidden]{display:none}
+#dmodal .box{background:#fff;width:min(980px,100%);height:88vh;border-radius:18px 18px 0 0;display:flex;flex-direction:column;overflow:hidden}
+#dmodal .hd{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#dmodal .hd b{flex:1;font-size:15px}
+#dmodal .tw{overflow:auto;flex:1}
+#dmodal table{border-collapse:collapse;font-size:12px;min-width:100%}
+#dmodal th,#dmodal td{padding:7px 9px;border-bottom:1px solid #f0f0f2;white-space:nowrap;text-align:left}
+#dmodal th{position:sticky;top:0;background:#fafafa;font-weight:600;color:var(--ink2);z-index:1}
+#dmodal td.num{text-align:right;font-variant-numeric:tabular-nums}
 /* Controles flotantes del mapa */
 .fab{position:absolute;right:12px;z-index:500;width:44px;height:44px;border-radius:14px;border:0;background:#fff;box-shadow:0 4px 14px rgba(0,0,0,.14);display:grid;place-items:center;cursor:pointer}
 .fab svg{width:20px;height:20px}
@@ -861,6 +872,7 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
   <details class="opts">
     <summary>Datos y fuente</summary>
     <div id="meta" class="foot">—</div>
+    <p style="display:flex;gap:6px;flex-wrap:wrap"><button class="chip" id="opentbl">📋 Ver todos los datos del tablero</button><button class="chip" id="copyall">Copiar datos para Claude</button></p>
     <details style="margin:8px 0"><summary style="font-size:12px">Ver tarifas verificadas (Cat. I)</summary><div id="verifl" class="foot"></div></details>
     <p class="foot">Si la descarga automática falla, carga un GeoJSON o CSV de peajes con latitud/longitud:</p>
     <input type="file" id="file" accept=".geojson,.json,.csv" style="font-size:12px">
@@ -868,6 +880,13 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
   </details>
   <p class="foot">Rutas: OSRM · Mapa: © Esri / OpenStreetMap · Peajes: Supertransporte.</p>
 </aside>
+<div id="dmodal" hidden><div class="box">
+  <div class="hd"><b>Datos del tablero de Supertransporte</b>
+    <input class="in" id="dq" placeholder="Buscar peaje, departamento…" style="max-width:260px">
+    <button class="chip" id="dcopy">Copiar</button><button class="chip" id="dclose">Cerrar</button></div>
+  <div class="foot" id="dinfo" style="padding:6px 16px"></div>
+  <div class="tw"><table id="dtbl"></table></div>
+</div></div>
 <div id="mapwrap">
   <div id="map"></div>
   <button class="fab" id="fabLoc" title="Centrar en mi ubicación"><svg viewBox="0 0 24 24" fill="none" stroke="#111318" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 21 3l-8 18-2-8-8-2z"/></svg></button>
@@ -1294,6 +1313,26 @@ setupAC($('orig'),$('sorig'),'A'); setupAC($('via'),$('svia'),'V'); $('viaclr').
 $('file').onchange=async e=>{ const f=e.target.files[0]; if(!f) return; const t=await f.text();
   try{ const d=/\.csv$/i.test(f.name)?parseCSV(t):parseGeoJSON(JSON.parse(t)); if(!d.tolls.length) throw new Error('sin puntos'); applyData(d); }catch(err){ st('No pude leer el archivo: '+esc(err.message),'err'); } };
 $('reload').onclick=()=>boot(true);
+function visibleFields(){ return FIELDS.filter(f=>!/^(objectid|fid|shape|globalid|shape_.*)$/i.test(f.name) && TOLLS.some(t=>t.attrs[f.name]!=null&&t.attrs[f.name]!=='')); }
+function fmtCell(v,f){ if(v==null) return ''; if(/Date/.test(f.type)&&typeof v==='number') return new Date(v).toISOString().slice(0,10); return typeof v==='number'&&v>=1000?v.toLocaleString('es-CO'):String(v); }
+function tableCSV(rows){ const fs=visibleFields(); const q=x=>{ x=x==null?'':String(x); return /[;"\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x; };
+  return [fs.map(f=>q(f.alias&&f.alias!==f.name?f.name+' ('+f.alias+')':f.name)).concat(['lat','lon']).join(';')]
+    .concat(rows.map(t=>fs.map(f=>q(fmtCell(t.attrs[f.name],f))).concat([t.lat.toFixed(5),t.lon.toFixed(5)]).join(';'))).join('\n'); }
+function renderTbl(){
+  const fs=visibleFields(), q=norm($('dq').value);
+  const rows=TOLLS.filter(t=>!q||norm(Object.values(t.attrs).join(' ')).includes(q));
+  $('dinfo').textContent=`${rows.length} de ${TOLLS.length} registros · ${fs.length} columnas`;
+  $('dtbl').innerHTML='<tr>'+fs.map(f=>`<th title="${esc(f.name)}">${esc(f.alias&&f.alias!==f.name?f.alias+' · '+f.name:f.name)}</th>`).join('')+'</tr>'+
+    rows.slice(0,500).map(t=>'<tr>'+fs.map(f=>{ const v=t.attrs[f.name]; return `<td class="${typeof v==='number'?'num':''}">${esc(fmtCell(v,f))}</td>`; }).join('')+'</tr>').join('');
+  return rows;
+}
+async function copyText(txt,btn){ try{ await navigator.clipboard.writeText(txt); const o=btn.textContent; btn.textContent='✓ Copiado'; setTimeout(()=>btn.textContent=o,1800); }
+  catch(e){ const ta=document.createElement('textarea'); ta.value=txt; ta.style.cssText='position:fixed;inset:10% 5%;z-index:4000;height:60%'; document.body.appendChild(ta); ta.select(); st('No pude copiar automáticamente: mantén presionado el texto, Seleccionar todo → Copiar. Toca fuera para cerrar.','err'); ta.onblur=()=>ta.remove(); } }
+$('opentbl').onclick=()=>{ if(!TOLLS.length){ st('Aún no hay datos cargados.','err'); return; } $('dmodal').hidden=false; renderTbl(); };
+$('dclose').onclick=()=>$('dmodal').hidden=true;
+$('dq').oninput=renderTbl;
+$('dcopy').onclick=()=>copyText(tableCSV(renderTbl()),$('dcopy'));
+$('copyall').onclick=()=>{ if(!TOLLS.length){ st('Aún no hay datos cargados.','err'); return; } copyText(tableCSV(TOLLS),$('copyall')); };
 $('verifl').innerHTML=VERIF.map(e=>`${esc(e.k[0].replace(/\b\w/g,c=>c.toUpperCase()))}: <b>${fmt(e.v)}</b> · ${esc(e.d)} · ${esc(e.src)}${e.warn?' · ⚠ '+esc(e.warn):''}`).join('<br>')+'<br><i>Actualizado el 1-nov-2026. Confirma antes de viajar.</i>';
 fetch(NOMI+'/status?format=json',{cache:'no-store'}).catch(()=>st('<b>Esta vista bloquea internet.</b> Descarga el archivo y ábrelo con Chrome para que cargue mapa, peajes y rutas.','err'));
 boot();
