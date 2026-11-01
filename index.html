@@ -836,6 +836,7 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
       <div><label>Rendimiento (km/gal)</label><input class="in" id="kmg" type="number" inputmode="numeric" placeholder="ej. 40"></div>
     </div>
     <label class="check"><input type="checkbox" id="avoid"> Probar también una ruta evitando peajes (según OpenStreetMap, puede ser incompleto)</label>
+    <label class="check"><input type="checkbox" id="diff"> Tengo <b>tarifa diferencial</b> de Autopistas del Café (residente de Manizales, Chinchiná, Villamaría, Palestina, Santa Rosa o Circasia): Tarapacá I, II y Circasia a $700. Debes estar inscrito con el concesionario.</label>
     <div style="margin-top:10px"><label style="font-size:12px;color:var(--mute)">Distancia máxima peaje–ruta (m)</label><input class="in" id="tol" type="number" value="120"></div>
   </details>
 
@@ -860,6 +861,7 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
   <details class="opts">
     <summary>Datos y fuente</summary>
     <div id="meta" class="foot">—</div>
+    <details style="margin:8px 0"><summary style="font-size:12px">Ver tarifas verificadas (Cat. I)</summary><div id="verifl" class="foot"></div></details>
     <p class="foot">Si la descarga automática falla, carga un GeoJSON o CSV de peajes con latitud/longitud:</p>
     <input type="file" id="file" accept=".geojson,.json,.csv" style="font-size:12px">
     <p><button class="chip" id="reload">Volver a descargar</button></p>
@@ -912,6 +914,56 @@ const carIcon = deg => L.divIcon({className:'',iconSize:[40,40],iconAnchor:[20,2
   html:`<div style="position:relative;width:40px;height:40px"><div class="pulse"></div><div style="transform:rotate(${deg||0}deg);width:40px;height:40px">${CAR_SVG}</div></div>`});
 const endIcon = b => L.divIcon({className:'',iconSize:[18,18],iconAnchor:[9,9],html:`<div class="endpin ${b?'b':''}"></div>`});
 
+// Tarifas Cat. I verificadas en prensa/ANI (actualizado 1-nov-2026). Solo se aplican a Categoría I.
+const VERIF=[
+ {k:['la pintada'],v:23900,d:'16-ene-2026',src:'ANI / El Colombiano'},
+ {k:['amaga'],v:25900,d:'16-jul-2026',src:'El Colombiano'},
+ {k:['copacabana','guarne'],v:18500,d:'ene-2026',src:'El Colombiano',warn:'Cambió el operador (fin de Devimed, 31-jul-2026): confirmar'},
+ {k:['tunel de oriente','tunel oriente'],v:26300,d:'17-ene-2026',src:'Gobernación de Antioquia'},
+ {k:['variante palmas'],v:20200,d:'17-ene-2026',src:'Gobernación de Antioquia'},
+ {k:['santa elena'],v:15100,d:'17-ene-2026',src:'Gobernación de Antioquia'},
+ {k:['pajarito','san pedro'],v:12900,d:'17-ene-2026',src:'Gobernación de Antioquia'},
+ {k:['cisneros'],v:29400,d:'16-ene-2026',src:'ANI / Portafolio'},
+ {k:['trapiche'],v:20300,d:'2026',src:'Portafolio'},
+ {k:['aburra'],v:24909,d:'16-ene-2026',src:'El Colombiano'},
+ {k:['santagueda'],v:16200,d:'9-ene-2026',src:'Portafolio'},
+ {k:['pavas'],v:16200,d:'9-ene-2026',src:'Portafolio'},
+ {k:['tarapaca ii','tarapaca 2'],v:17800,d:'9-ene-2026',src:'El Colombiano',diff:true},
+ {k:['tarapaca i','tarapaca 1','tarapaca'],v:17800,d:'9-ene-2026',src:'El Colombiano',diff:true},
+ {k:['circasia'],v:21200,d:'9-ene-2026',src:'El Colombiano',diff:true},
+ {k:['el roble'],v:12400,d:'2026',src:'Portafolio'},
+ {k:['gambote'],v:12600,d:'2026',src:'Portafolio'},
+ {k:['loboguerrero'],v:12400,d:'2026',src:'Portafolio'},
+ {k:['media canoa','mediacanoa'],v:13200,d:'2026',src:'Portafolio'},
+ {k:['cencar'],v:13200,d:'2026',src:'Portafolio'},
+ {k:['la gomez'],v:16300,d:'2026',src:'Portafolio'},
+ {k:['los curos'],v:7600,d:'2026',src:'Portafolio'},
+ {k:['puente amarillo'],v:14300,d:'2026',src:'Portafolio'},
+ {k:['gualanday'],v:15300,d:'2026',src:'Portafolio'},
+ {k:['mondonedo'],v:9900,d:'2026',src:'Portafolio'},
+ {k:['pipiral'],v:29100,d:'16-ene-2026',src:'El Colombiano'},
+ {k:['macheta'],v:27326,d:'16-ene-2026',src:'El Colombiano'},
+ {k:['naranjal'],v:17026,d:'16-ene-2026',src:'El Colombiano'},
+ {k:['boqueron'],v:19864,d:'16-ene-2026',src:'El Colombiano'},
+ {k:['el placer'],v:20915,d:'16-ene-2026',src:'El Colombiano'},
+ {k:['puerto berrio'],v:14083,d:'16-ene-2026',src:'El Colombiano'},
+ {k:['fusca','andes','unisabana'],v:16100,d:'1-jul-2026',src:'Canal Trece'},
+ {k:['albarracin'],v:12400,d:'15-ene-2026',src:'El Colombiano'},
+ {k:['tuta'],v:12400,d:'15-ene-2026',src:'El Colombiano'},
+ {k:['turbaco'],v:5800,d:'10-ene-2026',src:'El Colombiano'},
+];
+const norm=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+function verifOf(t){ if(t._vf!==undefined) return t._vf; const n=' '+norm(t.name)+' ';
+  t._vf=VERIF.find(e=>e.k.some(k=>n.includes(' '+k+' ')))||null; return t._vf; }
+function isCatI(){ const f=FIELDS.find(x=>x.name===$('cat').value); return f&&catNum(f)===1; }
+// precio usado + info
+function priceOf(t,cat){
+  const raw=typeof t.attrs[cat]==='number'?t.attrs[cat]:null;
+  if(!isCatI()) return {v:raw,raw};
+  const e=verifOf(t); if(!e) return {v:raw,raw};
+  if(e.diff && $('diff') && $('diff').checked) return {v:700,raw,e,isDiff:true};
+  return {v:e.v,raw,e};
+}
 let V=null;
 let TOLLS=[], FIELDS=[], NAME_F=null, A=null, B=null, ROUTES=[], SEL=0;
 let ME=null, carMarker=null, watchId=null, lastMe=null;
@@ -1106,7 +1158,7 @@ function pickByPrio(){
   if(!ROUTES.length) return 0;
   const tol=+$('tol').value||120, cat=$('cat').value, gal=+$('gal').value, kmg=+$('kmg').value;
   const val=r=>{ if(PRIO==='short') return r.distance; if(PRIO==='fast') return r.duration;
-    const hits=TOLLS.length?tollsOnRoute(r.coords,tol):[]; const t=cat?hits.reduce((s,h)=>s+(typeof h.t.attrs[cat]==='number'?h.t.attrs[cat]:0),0):hits.length;
+    const hits=TOLLS.length?tollsOnRoute(r.coords,tol):[]; const t=cat?hits.reduce((s,h)=>s+(priceOf(h.t,cat).v||0),0):hits.length;
     return t+(gal&&kmg? r.distance/1000/kmg*gal : 0) + r.duration/1e6; };
   let b=0; ROUTES.forEach((r,i)=>{ if(val(r)<val(ROUTES[b])) b=i; }); return b;
 }
@@ -1184,6 +1236,8 @@ $('go').onclick=async()=>{
   finally{ $('go').textContent='Calcular ruta'; }
 };
 $('cat').onchange=()=>{ try{localStorage.setItem('peajes_cat',$('cat').value);}catch(e){} if(ROUTES.length) renderResults(); };
+try{ $('diff').checked=localStorage.getItem('peajes_diff')==='1'; }catch(e){}
+$('diff').onchange=()=>{ try{localStorage.setItem('peajes_diff',$('diff').checked?'1':'0');}catch(e){} if(ROUTES.length) renderResults(); };
 ['gal','kmg'].forEach(id=>$(id).addEventListener('input',()=>{ if(ROUTES.length) renderResults(); }));
 $('tol').onchange=()=>{ if(ROUTES.length) renderResults(); };
 
@@ -1192,8 +1246,8 @@ function renderResults(sel,fit){
   if(sel!=null) SEL=sel;
   const cat=$('cat').value, tol=+$('tol').value||120, gal=+$('gal').value, kmg=+$('kmg').value;
   ROUTES.forEach(r=>{ r.hits=TOLLS.length?tollsOnRoute(r.coords,tol):[];
-    r.missing=r.hits.filter(h=>typeof h.t.attrs[cat]!=='number').length;
-    r.tollCost=cat?r.hits.reduce((s,h)=>s+(typeof h.t.attrs[cat]==='number'?h.t.attrs[cat]:0),0):null;
+    r.missing=r.hits.filter(h=>priceOf(h.t,cat).v==null).length;
+    r.tollCost=cat?r.hits.reduce((s,h)=>s+(priceOf(h.t,cat).v||0),0):null;
     r.fuel=gal&&kmg?r.distance/1000/kmg*gal:null; r.total=(r.tollCost||0)+(r.fuel||0); });
   const fastest=Math.min(...ROUTES.map(r=>r.duration)), cheapest=Math.min(...ROUTES.map(r=>r.total)), shortest=Math.min(...ROUTES.map(r=>r.distance));
 
@@ -1229,7 +1283,8 @@ function renderResults(sel,fit){
 
   let tl=`<h3>Peajes en el camino <span>${s.hits.length}</span></h3>`;
   if(!s.hits.length) tl+=`<p class="foot">${TOLLS.length?'No se detectaron peajes a menos de '+tol+' m de esta ruta.':'Aún no hay datos de peajes cargados.'}</p>`;
-  else tl+=s.hits.map((x,k)=>`<div class="ti" data-k="${k}"><div class="n">${k+1}</div><div><div class="nm">${esc(x.t.name)}</div><div class="sm">km ${x.km.toFixed(0)}${x.dup?' · '+x.dup+' casetas':''}${x.again?' · pasas 2 veces':''}${x.dist>60?' · a '+Math.round(x.dist)+' m de la vía':''}</div></div><div class="pr">${fmt(x.t.attrs[cat])}</div></div>`).join('')+`<div class="total"><span>Total peajes</span><span>${fmt(s.tollCost)}</span></div>`;
+  else tl+=s.hits.map((x,k)=>`<div class="ti" data-k="${k}"><div class="n">${k+1}</div><div><div class="nm">${esc(x.t.name)}</div><div class="sm">km ${x.km.toFixed(0)}${x.dup?' · '+x.dup+' casetas':''}${x.again?' · pasas 2 veces':''}${x.dist>60?' · a '+Math.round(x.dist)+' m de la vía':''}</div></div><div class="pr">${(()=>{ const p=priceOf(x.t,cat); if(!p.e) return fmt(p.v)+'<div class="sm" style="text-align:right">sin verificar</div>';
+    const chg=p.raw!=null&&p.raw!==p.v; return `${fmt(p.v)} <span title="${esc(p.e.src+' · '+p.e.d)}" style="color:var(--ok)">✓</span><div class="sm" style="text-align:right">${p.isDiff?'diferencial':esc(p.e.d)}${chg?' · datos: '+fmt(p.raw):''}</div>${p.e.warn?'<div class="sm" style="color:var(--warn);text-align:right;max-width:150px">'+esc(p.e.warn)+'</div>':''}`; })()}</div></div>`).join('')+`<div class="total"><span>Total peajes</span><span>${fmt(s.tollCost)}</span></div><p class="foot">✓ = tarifa Cat. I verificada en ANI o prensa (fecha al lado). “sin verificar” = valor del tablero de Supertransporte. ${isCatI()?'':'<b>Las tarifas verificadas solo aplican a Cat. I.</b>'}</p>`;
   $('tl').innerHTML=tl;
   $('tl').querySelectorAll('.ti').forEach(e=>e.onclick=()=>{ const x=s.hits[+e.dataset.k]; map.setView([x.t.lat,x.t.lon],17); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); });
 }
@@ -1239,6 +1294,7 @@ setupAC($('orig'),$('sorig'),'A'); setupAC($('via'),$('svia'),'V'); $('viaclr').
 $('file').onchange=async e=>{ const f=e.target.files[0]; if(!f) return; const t=await f.text();
   try{ const d=/\.csv$/i.test(f.name)?parseCSV(t):parseGeoJSON(JSON.parse(t)); if(!d.tolls.length) throw new Error('sin puntos'); applyData(d); }catch(err){ st('No pude leer el archivo: '+esc(err.message),'err'); } };
 $('reload').onclick=()=>boot(true);
+$('verifl').innerHTML=VERIF.map(e=>`${esc(e.k[0].replace(/\b\w/g,c=>c.toUpperCase()))}: <b>${fmt(e.v)}</b> · ${esc(e.d)} · ${esc(e.src)}${e.warn?' · ⚠ '+esc(e.warn):''}`).join('<br>')+'<br><i>Actualizado el 1-nov-2026. Confirma antes de viajar.</i>';
 fetch(NOMI+'/status?format=json',{cache:'no-store'}).catch(()=>st('<b>Esta vista bloquea internet.</b> Descarga el archivo y ábrelo con Chrome para que cargue mapa, peajes y rutas.','err'));
 boot();
 </script>
