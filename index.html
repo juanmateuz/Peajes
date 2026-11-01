@@ -743,7 +743,7 @@ details[open] summary:after{content:"–"}
 .rc .meta{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:10px;font-size:12.5px;color:var(--ink2)}
 .rc .meta i{font-style:normal;color:var(--mute)}.rc .meta span{white-space:nowrap}
 .pill{display:inline-block;font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:99px;margin-left:6px;vertical-align:2px}
-.pill.fast{background:var(--acc2);color:var(--acc)}.pill.cheap{background:var(--okbg);color:var(--ok)}
+.pill.fast{background:var(--acc2);color:var(--acc)}.pill.short{background:#f1ecff;color:#6b3fd6}.pill.cheap{background:var(--okbg);color:var(--ok)}
 .warnline{font-size:11.5px;color:var(--warn);margin-top:6px}
 
 .tl{margin-top:18px}
@@ -813,6 +813,12 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
 
   <div id="helpbox"></div>
 
+  <div class="lbl">Prioridad</div>
+  <div class="chips" id="prio">
+    <button class="chip on" data-p="fast" type="button">⚡ Más rápida</button>
+    <button class="chip" data-p="short" type="button">📏 Más corta</button>
+    <button class="chip" data-p="cheap" type="button">💰 Más barata</button>
+  </div>
   <div class="lbl">Tu vehículo</div>
   <select id="cat"><option value="">Cargando peajes…</option></select>
   <p class="foot" style="margin-top:6px">La mayoría de carros particulares son <b>Cat. I</b>. La clasificación exacta (ejes, llantas) puede variar según el peaje. Las motos no pagan en la mayoría de peajes nacionales.</p>
@@ -1056,7 +1062,7 @@ function locate(asOrigin=true){
     ME={lat,lon}; updateCar(lat,lon,heading);
     if(asOrigin){ A={lat,lon,label:'Mi ubicación',isMe:true}; $('orig').value='Mi ubicación'; drawPins();
       fetch(`${NOMI}/reverse?format=json&accept-language=es&zoom=16&lat=${lat}&lon=${lon}`).then(r=>r.json()).then(d=>{ if(d&&d.display_name&&A&&A.isMe) $('orig').value='Mi ubicación · '+d.display_name.split(',').slice(0,2).join(','); }).catch(()=>{}); }
-    map.setView([lat,lon],Math.max(map.getZoom(),14));
+    map.setView([lat,lon],Math.max(map.getZoom(),17));
     st(`Ubicación encontrada (±${Math.round(accuracy)} m).`,'ok');
     startWatch();
   },err=>{ st(''); showHelp({1:'denied',2:'unavailable',3:'timeout'}[err.code]||'unavailable'); },
@@ -1065,12 +1071,25 @@ function locate(asOrigin=true){
 function startWatch(){ if(watchId!=null) return;
   watchId=navigator.geolocation.watchPosition(p=>{ ME={lat:p.coords.latitude,lon:p.coords.longitude}; updateCar(ME.lat,ME.lon,p.coords.heading);
     if(A&&A.isMe){ A.lat=ME.lat; A.lon=ME.lon; } if(FOLLOW) map.panTo([ME.lat,ME.lon],{animate:true}); },()=>{}, {enableHighAccuracy:true,maximumAge:5000}); }
+let PRIO='fast';
+try{ const sp=localStorage.getItem('peajes_prio'); if(sp) PRIO=sp; }catch(e){}
+function paintPrio(){ document.querySelectorAll('#prio .chip').forEach(c=>c.classList.toggle('on',c.dataset.p===PRIO)); }
+paintPrio();
+document.querySelectorAll('#prio .chip').forEach(c=>c.onclick=()=>{ PRIO=c.dataset.p; paintPrio(); try{localStorage.setItem('peajes_prio',PRIO);}catch(e){} if(ROUTES.length) renderResults(pickByPrio(),true); });
+function pickByPrio(){
+  if(!ROUTES.length) return 0;
+  const tol=+$('tol').value||120, cat=$('cat').value, gal=+$('gal').value, kmg=+$('kmg').value;
+  const val=r=>{ if(PRIO==='short') return r.distance; if(PRIO==='fast') return r.duration;
+    const hits=TOLLS.length?tollsOnRoute(r.coords,tol):[]; const t=cat?hits.reduce((s,h)=>s+(typeof h.t.attrs[cat]==='number'?h.t.attrs[cat]:0),0):hits.length;
+    return t+(gal&&kmg? r.distance/1000/kmg*gal : 0) + r.duration/1e6; };
+  let b=0; ROUTES.forEach((r,i)=>{ if(val(r)<val(ROUTES[b])) b=i; }); return b;
+}
 let FOLLOW=false;
 function setFollow(on){ FOLLOW=on; $('fabLoc').classList.toggle('on',on); }
 function centerCar(){
   if(!carMarker){ locate(false); return; }
   setFollow(true);
-  map.setView(carMarker.getLatLng(), Math.max(map.getZoom(),16), {animate:true});
+  map.setView(carMarker.getLatLng(), Math.max(map.getZoom(),18), {animate:true});
   if(innerWidth<860) scrollTo({top:0,behavior:'smooth'});
 }
 map.on('dragstart',()=>setFollow(false));
@@ -1124,7 +1143,7 @@ $('go').onclick=async()=>{
     if($('avoid').checked){ try{ const nr=await osrm(A,B,'&exclude=toll'); if(nr[0]) routes.push({...nr[0],label:'Evitando peajes'}); }catch(e){} }
     ROUTES=[]; for(const r of routes){ if(!ROUTES.some(x=>Math.abs(x.distance-r.distance)<500&&Math.abs(x.duration-r.duration)<120)) ROUTES.push(r); }
     ROUTES.forEach(r=>r.coords=r.geometry.coordinates.map(c=>[c[1],c[0]]));
-    renderResults(0,true);
+    renderResults(pickByPrio(),true);
   }catch(e){ st('No pude calcular la ruta: '+esc(e.message),'err'); }
   finally{ $('go').textContent='Calcular ruta'; }
 };
@@ -1140,7 +1159,7 @@ function renderResults(sel,fit){
     r.missing=r.hits.filter(h=>typeof h.t.attrs[cat]!=='number').length;
     r.tollCost=cat?r.hits.reduce((s,h)=>s+(typeof h.t.attrs[cat]==='number'?h.t.attrs[cat]:0),0):null;
     r.fuel=gal&&kmg?r.distance/1000/kmg*gal:null; r.total=(r.tollCost||0)+(r.fuel||0); });
-  const fastest=Math.min(...ROUTES.map(r=>r.duration)), cheapest=Math.min(...ROUTES.map(r=>r.total));
+  const fastest=Math.min(...ROUTES.map(r=>r.duration)), cheapest=Math.min(...ROUTES.map(r=>r.total)), shortest=Math.min(...ROUTES.map(r=>r.distance));
 
   routeLayer.clearLayers();
   ROUTES.forEach((r,i)=>{ if(i===SEL) return;
@@ -1160,7 +1179,7 @@ function renderResults(sel,fit){
   $('viewall').onclick=()=>{ setFollow(false); map.fitBounds(main.getBounds(),{padding:[40,40]}); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); };
 
   $('routes').innerHTML=ROUTES.map((r,i)=>{
-    const tags=(r.duration===fastest?'<span class="pill fast">Más rápida</span>':'')+(ROUTES.length>1&&r.total===cheapest&&(r.tollCost!=null||r.fuel!=null)?'<span class="pill cheap">Más barata</span>':'');
+    const tags=(r.duration===fastest?'<span class="pill fast">Más rápida</span>':'')+(ROUTES.length>1&&r.distance===shortest?'<span class="pill short">Más corta</span>':'')+(ROUTES.length>1&&r.total===cheapest&&(r.tollCost!=null||r.fuel!=null)?'<span class="pill cheap">Más barata</span>':'');
     return `<div class="rc ${i===SEL?'sel':''}" data-i="${i}">
       <div class="top"><div><div class="time">${hm(r.duration)}</div><div class="name">${r.label}${tags}</div></div>
       <div class="cost"><b>${fmt(r.fuel!=null?r.total:r.tollCost)}</b><span>${r.fuel!=null?'peajes + combustible':'en peajes'}</span></div></div>
@@ -1172,7 +1191,7 @@ function renderResults(sel,fit){
   if(!s.hits.length) tl+=`<p class="foot">${TOLLS.length?'No se detectaron peajes a menos de '+tol+' m de esta ruta.':'Aún no hay datos de peajes cargados.'}</p>`;
   else tl+=s.hits.map((x,k)=>`<div class="ti" data-k="${k}"><div class="n">${k+1}</div><div><div class="nm">${esc(x.t.name)}</div><div class="sm">km ${x.km.toFixed(0)}${x.dup?' · '+x.dup+' casetas':''}${x.dist>60?' · a '+Math.round(x.dist)+' m de la vía':''}</div></div><div class="pr">${fmt(x.t.attrs[cat])}</div></div>`).join('')+`<div class="total"><span>Total peajes</span><span>${fmt(s.tollCost)}</span></div>`;
   $('tl').innerHTML=tl;
-  $('tl').querySelectorAll('.ti').forEach(e=>e.onclick=()=>{ const x=s.hits[+e.dataset.k]; map.setView([x.t.lat,x.t.lon],15); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); });
+  $('tl').querySelectorAll('.ti').forEach(e=>e.onclick=()=>{ const x=s.hits[+e.dataset.k]; map.setView([x.t.lat,x.t.lon],17); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); });
 }
 
 // ---------- Init ----------
