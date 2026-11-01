@@ -1020,11 +1020,21 @@ function setupAC(inp,box,which){
     tm=setTimeout(async()=>{ try{
       const d=await (await fetch(`${NOMI}/search?format=json&countrycodes=co&limit=6&accept-language=es&q=${encodeURIComponent(q)}`)).json(); box.innerHTML='';
       d.forEach(p=>{ const parts=p.display_name.split(','); const e=document.createElement('div'); e.innerHTML=`<b>${esc(parts[0])}</b>${esc(parts.slice(1,4).join(','))}`;
-        e.onclick=()=>{ setPoint(which,{lat:+p.lat,lon:+p.lon,label:p.display_name}); inp.value=parts.slice(0,2).join(','); box.hidden=true; }; box.appendChild(e); });
+        e.onclick=()=>{ setPoint(which,{lat:+p.lat,lon:+p.lon,label:p.display_name,road:p.class==='highway',q:parts[0]}); inp.value=parts.slice(0,2).join(','); box.hidden=true; }; box.appendChild(e); });
       box.hidden=!d.length||document.activeElement!==inp; }catch(e){ box.hidden=true; } },400); });
   document.addEventListener('click',ev=>{ if(!box.contains(ev.target)&&ev.target!==inp) box.hidden=true; });
 }
 async function geocode(q){ const d=await (await fetch(`${NOMI}/search?format=json&countrycodes=co&limit=1&accept-language=es&q=${encodeURIComponent(q)}`)).json(); if(!d.length) throw new Error('No encontré “'+q+'”'); return {lat:+d[0].lat,lon:+d[0].lon,label:d[0].display_name}; }
+async function geocodeBest(q,a,b){
+  const pad=.3, vb=[Math.min(a.lon,b.lon)-pad,Math.max(a.lat,b.lat)+pad,Math.max(a.lon,b.lon)+pad,Math.min(a.lat,b.lat)-pad].join(',');
+  let d=await (await fetch(`${NOMI}/search?format=json&countrycodes=co&limit=40&accept-language=es&viewbox=${vb}&bounded=1&q=${encodeURIComponent(q)}`)).json();
+  if(!d.length) d=await (await fetch(`${NOMI}/search?format=json&countrycodes=co&limit=20&accept-language=es&q=${encodeURIComponent(q)}`)).json();
+  if(!d.length) throw new Error('No encontré “'+q+'”');
+  const A2=[a.lat,a.lon], B2=[b.lat,b.lon];
+  let best=null, bv=1e18;
+  for(const r of d){ const p=[+r.lat,+r.lon]; const det=hav(A2,p)+hav(p,B2)-hav(A2,B2); if(det<bv){bv=det;best=r;} }
+  return {lat:+best.lat,lon:+best.lon,label:best.display_name,road:best.class==='highway',q,detour:bv};
+}
 function setPoint(w,p){ if(w==='A')A=p; else if(w==='V')V=p; else B=p; drawPins(); }
 function drawPins(){ pinLayer.clearLayers();
   if(A && !A.isMe) L.marker([A.lat,A.lon],{icon:endIcon(false)}).addTo(pinLayer);
@@ -1157,8 +1167,12 @@ $('go').onclick=async()=>{
     if(!A&&$('orig').value.trim()) A=await geocode($('orig').value.trim());
     if(!B&&$('dest').value.trim()) B=await geocode($('dest').value.trim());
     if(!A||!B){ st('Indica origen y destino.','err'); return; }
-    if(!V&&$('via').value.trim()) V=await geocode($('via').value.trim());
-    drawPins(); st('');
+    if($('via').value.trim() && (!V || V.road)){
+      const q=(V&&V.q)||$('via').value.split(',')[0].trim();
+      V=await geocodeBest(q,A,B);
+      if(V.road) st(`Para “${esc(q)}” usé el tramo que mejor queda en tu camino. Si no es el que quieres, mantén presionado el mapa justo sobre la vía y elige <b>Pasar por aquí</b>.`);
+    }
+    drawPins(); if(!V||!V.road) st('');
     let routes=[];
     if(V){ const vr=await osrm(A,B,'',V); if(vr[0]) routes.push({...vr[0],label:'Por '+($('via').value.split(',')[0]||'tu parada'),forced:true}); }
     routes=routes.concat((await osrm(A,B)).map((r,i)=>({...r,label:i===0?'Automática (OSRM)':'Alternativa '+i})));
