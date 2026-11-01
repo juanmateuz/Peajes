@@ -816,6 +816,7 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
     </div>
   </div>
 
+  <p class="foot" style="margin:6px 2px 0">Tip: <b>mantén presionado</b> el mapa para elegir salida, parada o destino.</p>
   <div id="helpbox"></div>
 
   <div class="lbl">Prioridad</div>
@@ -895,7 +896,7 @@ L.control.zoom({position:'topright'}).addTo(map);
 const ESRI='https://server.arcgisonline.com/ArcGIS/rest/services/';
 const base=L.tileLayer(ESRI+'World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Mapa © Esri, HERE, Garmin, OpenStreetMap'}).addTo(map);
 let tileErr=0; base.on('tileerror',()=>{ if(++tileErr===8){ map.removeLayer(base); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map); } });
-const tollLayer = L.layerGroup().addTo(map);
+const tollLayer = L.featureGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
 const pinLayer = L.layerGroup().addTo(map);
 
@@ -1029,8 +1030,16 @@ function drawPins(){ pinLayer.clearLayers();
   if(A && !A.isMe) L.marker([A.lat,A.lon],{icon:endIcon(false)}).addTo(pinLayer);
   if(V) L.marker([V.lat,V.lon],{icon:L.divIcon({className:'',iconSize:[14,14],iconAnchor:[7,7],html:'<div style="width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #111318;box-shadow:0 2px 6px rgba(0,0,0,.3)"></div>'})}).bindTooltip('Pasar por').addTo(pinLayer);
   if(B) L.marker([B.lat,B.lon],{icon:endIcon(true)}).addTo(pinLayer); }
-map.on('click',e=>{ const p={lat:e.latlng.lat,lon:e.latlng.lng,label:e.latlng.lat.toFixed(4)+', '+e.latlng.lng.toFixed(4)};
-  if(!A||(A&&B)){ A=p;B=null;$('orig').value=p.label;$('dest').value=''; } else { B=p;$('dest').value=p.label; } drawPins(); });
+function pointMenu(latlng){
+  const p={lat:latlng.lat,lon:latlng.lng,label:latlng.lat.toFixed(4)+', '+latlng.lng.toFixed(4)};
+  const html=`<div style="display:flex;flex-direction:column;gap:6px;min-width:150px">
+    <b style="font-size:12px;color:#8a8f9c">Usar este punto como…</b>
+    <button class="chip" data-w="A">● Salida</button><button class="chip" data-w="V">○ Pasar por aquí</button><button class="chip" data-w="B">■ Destino</button></div>`;
+  const pop=L.popup({closeButton:false}).setLatLng(latlng).setContent(html).openOn(map);
+  setTimeout(()=>pop.getElement().querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{
+    const w=b.dataset.w; setPoint(w,{...p}); $(w==='A'?'orig':w==='V'?'via':'dest').value=p.label; map.closePopup(); if(A&&B) $('go').click(); }),0);
+}
+map.on('contextmenu',e=>pointMenu(e.latlng));
 $('swap').onclick=()=>{ [A,B]=[B,A]; const v=$('orig').value; $('orig').value=$('dest').value; $('dest').value=v; if(B&&B.isMe){ B={...B,isMe:false}; } drawPins(); };
 
 // ---------- Ubicación + carro ----------
@@ -1127,21 +1136,24 @@ function tollsOnRoute(coords,tol){
   let a=90,b=-90,c=180,d=-180; coords.forEach(p=>{a=Math.min(a,p[0]);b=Math.max(b,p[0]);c=Math.min(c,p[1]);d=Math.max(d,p[1]);});
   const pad=.02, hits=[];
   for(const t of TOLLS){ if(t.lat<a-pad||t.lat>b+pad||t.lon<c-pad||t.lon>d+pad) continue;
-    const p=[t.lat,t.lon]; let best=1e12, at=0;
+    const p=[t.lat,t.lon]; let pass=null; const passes=[];
     for(let i=1;i<coords.length;i++){ const x=coords[i-1], y=coords[i];
       if(Math.abs(x[0]-p[0])>.05&&Math.abs(y[0]-p[0])>.05&&Math.sign(x[0]-p[0])===Math.sign(y[0]-p[0])) continue;
-      const [dd,f]=segDist(p,x,y); if(dd<best){best=dd;at=cum[i-1]+f*(cum[i]-cum[i-1]);} }
-    if(best<=tol) hits.push({t,dist:best,km:at/1000}); }
+      const [dd,f]=segDist(p,x,y); const km=(cum[i-1]+f*(cum[i]-cum[i-1]))/1000;
+      if(dd<=tol){ if(pass && km-pass.lastKm<3){ pass.lastKm=km; if(dd<pass.dist){pass.dist=dd;pass.km=km;} } else { pass={dist:dd,km,lastKm:km}; passes.push(pass); } }
+    }
+    passes.forEach(ps=>hits.push({t,dist:ps.dist,km:ps.km,again:passes.length>1}));
+  }
   hits.sort((x,y)=>x.km-y.km);
-  const out=[]; for(const h of hits){ const pv=out[out.length-1]; if(pv&&pv.t.name===h.t.name&&Math.abs(pv.km-h.km)<1.5){pv.dup=(pv.dup||1)+1;continue;} out.push(h); }
+  const out=[]; for(const h of hits){ const pv=out[out.length-1]; if(pv&&pv.t.name===h.t.name&&pv.t!==h.t&&Math.abs(pv.km-h.km)<1.5){pv.dup=(pv.dup||1)+1;continue;} out.push(h); }
   return out;
 }
-
 // ---------- Rutas ----------
 async function osrm(a,b,extra='',via=null){ const pts=[a,via,b].filter(Boolean).map(p=>`${p.lon},${p.lat}`).join(';'); const d=await (await fetch(`${OSRM}/route/v1/driving/${pts}?overview=full&geometries=geojson&alternatives=${via?'false':'3'}${extra}`)).json(); if(d.code!=='Ok') throw new Error(d.message||d.code); return d.routes; }
 $('go').onclick=async()=>{
   $('sorig').hidden=true; $('sdest').hidden=true; $('svia').hidden=true; $('go').textContent='Calculando…';
   try{
+    if(!$('orig').value.trim()) A=null; if(!$('dest').value.trim()) B=null; if(!$('via').value.trim()) V=null;
     if(!A&&$('orig').value.trim()) A=await geocode($('orig').value.trim());
     if(!B&&$('dest').value.trim()) B=await geocode($('dest').value.trim());
     if(!A||!B){ st('Indica origen y destino.','err'); return; }
@@ -1173,8 +1185,9 @@ function renderResults(sel,fit){
 
   routeLayer.clearLayers();
   ROUTES.forEach((r,i)=>{ if(i===SEL) return;
-    L.polyline(r.coords,{color:'#ffffff',weight:9,opacity:.9}).addTo(routeLayer);
-    L.polyline(r.coords,{color:'#a9b4c7',weight:5,opacity:1}).on('click',()=>renderResults(i)).addTo(routeLayer); });
+    L.polyline(r.coords,{color:'#7c8799',weight:4,opacity:.45,dashArray:'2 7',lineCap:'round'}).addTo(routeLayer);
+    L.polyline(r.coords,{color:'#000',weight:18,opacity:0}).on('click',()=>renderResults(i)).addTo(routeLayer); });
+  tollLayer.eachLayer(m=>m.setStyle({fillOpacity:.25,opacity:.25,radius:2.5}));
   const s=ROUTES[SEL];
   L.polyline(s.coords,{color:'#1f3fa8',weight:11,opacity:.25,lineCap:'round',lineJoin:'round'}).addTo(routeLayer);
   L.polyline(s.coords,{color:'#ffffff',weight:9,lineCap:'round',lineJoin:'round'}).addTo(routeLayer);
@@ -1195,12 +1208,14 @@ function renderResults(sel,fit){
       <div class="cost"><b>${fmt(r.fuel!=null?r.total:r.tollCost)}</b><span>${r.fuel!=null?'peajes + combustible':'en peajes'}</span></div></div>
       <div class="meta"><span>${(r.distance/1000).toFixed(0)} <i>km</i></span><span>${r.hits.length} <i>peajes</i></span><span>${fmt(r.tollCost)} <i>peajes</i></span>${r.fuel!=null?`<span>${fmt(r.fuel)} <i>combustible</i></span>`:''}</div>
       ${r.missing?`<div class="warnline">${r.missing} peaje(s) sin tarifa para esta categoría</div>`:''}</div>`; }).join('');
+  const forced=ROUTES.find(r=>r.forced), auto=ROUTES.find(r=>!r.forced);
+  if(forced&&auto&&forced.distance>auto.distance*1.25) $('routes').insertAdjacentHTML('afterbegin',`<div class="status err" style="margin:0 0 4px">La parada <b>“${esc($('via').value.split(',')[0])}”</b> agrega ${Math.round((forced.distance-auto.distance)/1000)} km de desvío: probablemente queda detrás de tu salida o fuera del camino. Elige un punto que esté <b>entre</b> la salida y el destino.</div>`);
   $('routes').insertAdjacentHTML('beforeend',`<p class="foot" style="margin:2px 2px 0">Los tiempos son estimados sin tráfico. Si sabes que una vía es más fluida, escríbela en <b>“Pasar por”</b> para forzar la ruta.</p>`);
   $('routes').querySelectorAll('.rc').forEach(c=>c.onclick=()=>renderResults(+c.dataset.i));
 
   let tl=`<h3>Peajes en el camino <span>${s.hits.length}</span></h3>`;
   if(!s.hits.length) tl+=`<p class="foot">${TOLLS.length?'No se detectaron peajes a menos de '+tol+' m de esta ruta.':'Aún no hay datos de peajes cargados.'}</p>`;
-  else tl+=s.hits.map((x,k)=>`<div class="ti" data-k="${k}"><div class="n">${k+1}</div><div><div class="nm">${esc(x.t.name)}</div><div class="sm">km ${x.km.toFixed(0)}${x.dup?' · '+x.dup+' casetas':''}${x.dist>60?' · a '+Math.round(x.dist)+' m de la vía':''}</div></div><div class="pr">${fmt(x.t.attrs[cat])}</div></div>`).join('')+`<div class="total"><span>Total peajes</span><span>${fmt(s.tollCost)}</span></div>`;
+  else tl+=s.hits.map((x,k)=>`<div class="ti" data-k="${k}"><div class="n">${k+1}</div><div><div class="nm">${esc(x.t.name)}</div><div class="sm">km ${x.km.toFixed(0)}${x.dup?' · '+x.dup+' casetas':''}${x.again?' · pasas 2 veces':''}${x.dist>60?' · a '+Math.round(x.dist)+' m de la vía':''}</div></div><div class="pr">${fmt(x.t.attrs[cat])}</div></div>`).join('')+`<div class="total"><span>Total peajes</span><span>${fmt(s.tollCost)}</span></div>`;
   $('tl').innerHTML=tl;
   $('tl').querySelectorAll('.ti').forEach(e=>e.onclick=()=>{ const x=s.hits[+e.dataset.k]; map.setView([x.t.lat,x.t.lon],17); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); });
 }
