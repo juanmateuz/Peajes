@@ -103,6 +103,11 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
 .veh small{display:block;color:var(--mute);font-size:11px;margin-top:1px}
 .veh.on{border-color:var(--ink);background:var(--ink);color:#fff}.veh.on small{color:#c9ccd3}
 .veh.add{border-style:dashed;color:var(--ink2)}
+.tchip{position:relative;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tchip b{font-weight:600}
+.tchip .del{display:none;position:absolute;top:2px;right:4px;color:var(--bad);font-weight:700}
+.trips-edit .tchip .del{display:block}
+.trips-edit .tchip{padding-right:22px}
 .seg{display:flex;background:#f1f2f4;border-radius:10px;padding:3px;gap:3px}
 .seg button{flex:1;border:0;background:transparent;border-radius:8px;padding:8px;font:inherit;font-size:13px;font-weight:600;color:var(--ink2);cursor:pointer}
 .seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}

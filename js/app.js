@@ -427,8 +427,64 @@ function paintTrip(){ document.querySelectorAll('#trip button').forEach(b=>b.cla
 document.querySelectorAll('#trip button').forEach(b=>b.onclick=()=>{ TRIP=+b.dataset.t; paintTrip(); try{localStorage.setItem('peajes_trip',TRIP);}catch(e){} if(ROUTES.length) renderResults(); });
 paintTrip(); drawVehs();
 
+// ---------- Tus rutas (aprendizaje de viajes frecuentes) ----------
+// Se guardan solo en este navegador. Mismo origen/destino (<2 km) y misma vía (≥85% coincidente) = mismo viaje: suma +1.
+let TRIPS=[], PREFER=null, RECORDED=-1;
+try{ TRIPS=JSON.parse(localStorage.getItem('peajes_trips')||'[]'); }catch(e){}
+const saveTrips=()=>{ try{ localStorage.setItem('peajes_trips',JSON.stringify(TRIPS.slice(0,30))); }catch(e){} };
+const r5=x=>Math.round(x*1e5)/1e5;
+function shortName(p){ return String(p.label||'').replace(/^Mi ubicación\s*·?\s*/,'').split(',')[0].trim()||(p.lat.toFixed(3)+','+p.lon.toFixed(3)); }
+async function townName(p){ try{ const d=await getJSON(`${NOMI}/reverse?format=json&accept-language=es&zoom=10&lat=${p.lat}&lon=${p.lon}`,{},8000); const a=d.address||{}; return a.town||a.city||a.village||a.municipality||a.county||null; }catch(e){ return null; } }
+function sameTrip(t,from,to,geom){ return hav([t.from.lat,t.from.lon],[from.lat,from.lon])<2000 && hav([t.to.lat,t.to.lon],[to.lat,to.lon])<2000 && overlap(geom,t.geom)>.85 && overlap(t.geom,geom)>.85; }
+async function recordTrip(manual){
+  const r=ROUTES[SEL]; if(!r||!A||!B) return;
+  if(!manual && RECORDED===CALC_SEQ) return;              // no contar dos veces el mismo cálculo
+  RECORDED=CALC_SEQ;
+  const geom=thin(r.coords,500).map(c=>[r5(c[0]),r5(c[1])]);
+  const from={lat:r5(A.lat),lon:r5(A.lon),label:A.label}, to={lat:r5(B.lat),lon:r5(B.lon),label:B.label};
+  const stops=allStops().map(p=>({lat:r5(p.lat),lon:r5(p.lon),label:p.label}));
+  let t=TRIPS.find(x=>sameTrip(x,from,to,geom));
+  if(t){ t.count++; t.last=Date.now(); t.geom=geom; t.km=Math.round(r.distance/1000); t.stops=stops; }
+  else{
+    const fn=A.isMe?(await townName(A))||shortName(A):shortName(A), tn=shortName(B);
+    const via=r.label&&/ por (.+)$/.test(r.label)?r.label.match(/ por (.+)$/)[1]:null;
+    t={id:String(Date.now()),name:fn+' → '+tn+(via?' (por '+via+')':''),from:{...from,isMe:!!A.isMe},to,stops,geom,km:Math.round(r.distance/1000),count:1,last:Date.now()};
+    TRIPS.unshift(t);
+  }
+  saveTrips(); drawTrips(); if(manual) toast('Guardada en Tus rutas: '+t.name);
+}
+function drawTrips(){
+  const list=[...TRIPS].sort((a,b)=>(b.count-a.count)||(b.last-a.last)).slice(0,8);
+  $('tripsWrap').hidden=!list.length;
+  $('trips').innerHTML=list.map(t=>`<button class="veh tchip" data-t="${t.id}" type="button" title="${esc(t.name)}"><b>${esc(t.name)}</b><small>${t.count} ${t.count===1?'viaje':'viajes'} · ${t.km} km</small><span class="del" data-del="${t.id}">✕</span></button>`).join('');
+  $('trips').querySelectorAll('[data-t]').forEach(b=>b.onclick=e=>{
+    if(e.target.dataset.del){ TRIPS=TRIPS.filter(x=>x.id!==e.target.dataset.del); saveTrips(); drawTrips(); return; }
+    loadTrip(TRIPS.find(x=>x.id===b.dataset.t)); });
+}
+$('tripEdit').onclick=e=>{ e.preventDefault(); $('tripsWrap').classList.toggle('trips-edit'); $('tripEdit').textContent=$('tripsWrap').classList.contains('trips-edit')?'Listo':'Editar'; };
+function loadTrip(t){
+  if(!t) return;
+  const near=ME&&hav([ME.lat,ME.lon],[t.from.lat,t.from.lon])<3000;
+  A=near?{lat:ME.lat,lon:ME.lon,label:'Mi ubicación',isMe:true}:{...t.from,picked:true,exact:true,isMe:false};
+  B={...t.to,picked:true,exact:true};
+  V=t.stops[0]?{...t.stops[0],picked:true,exact:true}:null; EXTRA=t.stops.slice(1).map(p=>({...p,picked:true,exact:true}));
+  $('orig').value=near?'Mi ubicación':shortName(t.from); $('dest').value=shortName(t.to); $('via').value=V?V.label:'';
+  drawStopList(); drawPins(); PREFER=t; calc();
+  if(innerWidth<860) scrollTo({top:0,behavior:'smooth'});
+}
+// ¿qué ruta calculada coincide con un viaje habitual?
+function markHabitual(){
+  ROUTES.forEach(r=>{ r.habitual=false; });
+  if(!A||!B||!TRIPS.length) return -1;
+  let best=-1, bo=.6;
+  for(const t of TRIPS){ if(hav([t.from.lat,t.from.lon],[A.lat,A.lon])>3000||hav([t.to.lat,t.to.lon],[B.lat,B.lon])>2000) continue;
+    ROUTES.forEach((r,i)=>{ const o=Math.min(overlap(lite(r),t.geom),overlap(t.geom,lite(r))); if(o>.85) r.habitual=true; if(PREFER===t&&o>bo){ bo=o; best=i; } }); }
+  return best;
+}
+drawTrips();
+
 // ---------- Fuera de ruta → recalcular ----------
-let OFF=0, LAST_RR=0, REROUTING=false;
+let OFF=0, LAST_RR=0, REROUTING=false, ARRIVED=-1;
 function toast(msg,ms=3500){ const t=$('toast'); t.textContent=msg; t.hidden=false; clearTimeout(t._tm); t._tm=setTimeout(()=>t.hidden=true,ms); }
 function distToRoute(p,c){ let best=1e12; const step=c.length>4000?2:1; for(let i=step;i<c.length;i+=step){ const d=segDist(p,c[i-step],c[i])[0]; if(d<best) best=d; } return best; }
 function progressKm(p,c){ const cum=cumDist(c); let best=1e12, at=0; for(let i=1;i<c.length;i++){ const [d,f]=segDist(p,c[i-1],c[i]); if(d<best){best=d; at=cum[i-1]+f*(cum[i]-cum[i-1]);} } return at; }
@@ -436,7 +492,7 @@ function checkOffRoute(lat,lon,acc){
   if(!$('autorr').checked || !ROUTES.length || !B || REROUTING) return;
   const r=ROUTES[SEL]; if(!r) return;
   if(acc>120) return;                                   // GPS poco preciso: no decidir
-  if(hav([lat,lon],[B.lat,B.lon])<300) return;          // ya llegaste
+  if(hav([lat,lon],[B.lat,B.lon])<300){ if(ARRIVED!==CALC_SEQ){ ARRIVED=CALC_SEQ; toast('Llegaste a tu destino'); } return; }   // ya llegaste (aviso una vez por viaje)
   const d=distToRoute([lat,lon],r.coords), lim=Math.max(120,acc*1.5);
   if(d<=lim){ OFF=0; return; }
   OFF++;
@@ -684,7 +740,7 @@ async function calc(opt={}){
     if(seq!==CALC_SEQ) return;   // llegó un cálculo más nuevo
     ROUTES=[]; for(const r of routes){ if(!ROUTES.some(x=>Math.abs(x.distance-r.distance)<500&&Math.abs(x.duration-r.duration)<120)) ROUTES.push(r); }
     ROUTES.forEach(r=>{ if(!r.coords) r.coords=r.geometry.coordinates.map(c=>[c[1],c[0]]); });
-    renderResults(pickByPrio(),RR&&FOLLOW?false:true);
+    { const hb=markHabitual(); renderResults(hb>=0?hb:pickByPrio(),RR&&FOLLOW?false:true); PREFER=null; }
     if(ROUTES.some(r=>r.variant)) nameVariants(seq);
     if(RR){ toast('Ruta recalculada desde tu ubicación'); if(FOLLOW&&ME) map.panTo([ME.lat,ME.lon]); }
     if($('explore').checked && !hasStops() && !RR){
@@ -694,7 +750,7 @@ async function calc(opt={}){
       if(window._exTok!==token) return;
       if(extra.length){ const selRoute=ROUTES[SEL]; ROUTES.push(...extra); ROUTES.forEach(r=>delete r._lp);
         for(const r of ROUTES.filter(x=>x.label.startsWith('Alternativa')||x.auto)){ await nameRoute(r); await new Promise(z=>setTimeout(z,1100)); if(window._exTok!==token) return; }
-        renderResults(PRIO==='fast'&&selRoute?ROUTES.indexOf(selRoute):pickByPrio(),FOLLOW?false:true);
+        markHabitual(); renderResults(PRIO==='fast'&&selRoute?ROUTES.indexOf(selRoute):pickByPrio(),FOLLOW?false:true);
         st(`Encontré ${extra.length} ruta(s) más. Toca una tarjeta para verla.`,'ok');
       } else st('No encontré otras rutas razonables además de las mostradas.');
     }
@@ -741,12 +797,13 @@ function renderResults(sel,fit){
   if(fit===true){ setFollow(false); const all=L.latLngBounds([]); ROUTES.forEach(r=>all.extend(L.polyline(r.coords).getBounds())); map.fitBounds(all,{padding:[50,50]}); }
   else if(fit!==false && !FOLLOW) map.fitBounds(main.getBounds(),{padding:[40,40]});
   $('startwrap').innerHTML=`<button class="startbtn" id="startnav"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 21 3l-8 18-2-8-8-2z"/></svg>${LIVE?'Iniciar y seguir el carro':'Activar en vivo y seguir el carro'}</button>
-    <div style="display:flex;gap:8px;margin-top:8px"><button class="chip" id="viewall" style="flex:1">Ver ruta completa</button></div>`;
-  $('startnav').onclick=()=>{ if(!LIVE && navigator.geolocation) setLive(true); centerCar(); };
+    <div style="display:flex;gap:8px;margin-top:8px"><button class="chip" id="viewall" style="flex:1">Ver ruta completa</button><button class="chip" id="savetrip" style="flex:1">⭐ Guardar en Tus rutas</button></div>`;
+  $('startnav').onclick=()=>{ if(!LIVE && navigator.geolocation) setLive(true); centerCar(); recordTrip(false); };
+  $('savetrip').onclick=()=>recordTrip(true);
   $('viewall').onclick=()=>{ setFollow(false); map.fitBounds(main.getBounds(),{padding:[40,40]}); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); };
 
   $('routes').innerHTML=ROUTES.map((r,i)=>{
-    const tags=(r.forced?'<span class="pill" style="background:#111318;color:#fff">Tus paradas</span>':'')+(r.duration===fastest?'<span class="pill fast">Más rápida</span>':'')+(ROUTES.length>1&&r.distance===shortest?'<span class="pill short">Más corta</span>':'')+(ROUTES.length>1&&r.total===cheapest&&(r.tollCost!=null||r.fuel!=null)?'<span class="pill cheap">Más barata</span>':'');
+    const tags=(r.habitual?'<span class="pill" style="background:#fff4d6;color:#8a5a00">★ Tu ruta habitual</span>':'')+(r.forced?'<span class="pill" style="background:#111318;color:#fff">Tus paradas</span>':'')+(r.duration===fastest?'<span class="pill fast">Más rápida</span>':'')+(ROUTES.length>1&&r.distance===shortest?'<span class="pill short">Más corta</span>':'')+(ROUTES.length>1&&r.total===cheapest&&(r.tollCost!=null||r.fuel!=null)?'<span class="pill cheap">Más barata</span>':'');
     return `<div class="rc ${i===SEL?'sel':''}" data-i="${i}">
       <div class="top"><div><div class="time">${hm(r.duration)}</div><div class="name">${esc(r.label)}${tags}</div></div>
       <div class="cost"><b>${fmt(r.fuel!=null?r.total:r.tollCost)}</b><span>${r.fuel!=null?'peajes + combustible':'en peajes'}${TRIP===2?' · ida y vuelta':''}</span></div></div>

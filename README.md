@@ -10,6 +10,8 @@ Planificador de viajes por carretera en Colombia: rutas alternativas, peajes en 
 - Peajes detectados sobre la ruta (incluye peajes que se pasan dos veces) con tarifas Cat. I verificadas.
 - Mis vehículos (categoría, km/galón, precio), solo ida o ida y vuelta, resumen totalizado.
 - Tipo de vía por colores (troncal, principal, secundaria, calle, destapada).
+- **Tus rutas**: aprende los viajes que inicias (o guardas con ⭐), sin duplicar los repetidos, y los ofrece como acceso rápido seleccionando tu ruta habitual. Solo se guardan en el navegador.
+- Paradas múltiples (hasta 4) con alternativas por tramo; puntos arrastrables.
 - Ubicación en vivo opcional, seguir el carro, modo rumbo, giro del mapa y recálculo si te sales de la ruta.
 
 ## Estructura

@@ -173,6 +173,24 @@ const tq=await E(()=>{ const c=ROUTES[1].coords; const q=c[Math.floor(c.length*0
 await p.mouse.move(tq.x,tq.y); await p.mouse.down(); await p.mouse.move(tq.x+6,tq.y+5,{steps:3}); await p.mouse.up(); await p.waitForTimeout(400);
 ok('Toque imperfecto (se mueve 8 px, a 20 px de la línea) selecciona la ruta', await E(()=>SEL===1));
 await E(()=>map.setBearing(0));
+// --- Tus rutas
+await E(()=>{ localStorage.removeItem('peajes_trips'); TRIPS=[]; drawTrips(); map.closePopup(); setFollow(false); V=null; EXTRA=[]; drawStopList(); document.getElementById('via').value='';
+  A={lat:4.6,lon:-74.1,label:'Bogotá, Cundinamarca'}; B={lat:6.25,lon:-75.57,label:'Medellín, Antioquia'}; document.getElementById('orig').value='Bogotá'; document.getElementById('dest').value='Medellín'; });
+await p.click('#go'); await p.waitForTimeout(1500);
+await E(()=>renderResults(0,false)); await p.click('#savetrip'); await p.waitForTimeout(300);
+ok('Guardar ruta crea un viaje frecuente', await E(()=>TRIPS.length===1 && TRIPS[0].name==='Bogotá → Medellín' && !document.getElementById('tripsWrap').hidden));
+await p.click('#go'); await p.waitForTimeout(1500); await E(()=>renderResults(0,false)); await p.click('#savetrip'); await p.waitForTimeout(300);
+ok('Mismo viaje por la misma vía no se duplica (suma +1)', await E(()=>TRIPS.length===1 && TRIPS[0].count===2));
+await E(()=>{ const i=ROUTES.findIndex((r,k)=>k>0 && overlap(lite(r),lite(ROUTES[0]))<.5); renderResults(i,false); }); await p.click('#savetrip'); await p.waitForTimeout(300);
+ok('Mismo origen/destino por otra vía se guarda aparte', await E(()=>TRIPS.length===2));
+ok('Iniciar no cuenta dos veces el mismo cálculo', await E(()=>{ const n=TRIPS.reduce((a,t)=>a+t.count,0); RECORDED=CALC_SEQ; recordTrip(false); return TRIPS.reduce((a,t)=>a+t.count,0)===n; }));
+// cargar el viaje por la otra vía: debe seleccionar esa como habitual
+await E(()=>{ const t=TRIPS.find(x=>x.count===1); document.querySelector('#trips [data-t="'+t.id+'"]').click(); }); await p.waitForTimeout(2000);
+ok('Tocar un viaje frecuente selecciona tu ruta habitual', await E(()=>{ const t=TRIPS.find(x=>x.count===1); return ROUTES[SEL].habitual && overlap(lite(ROUTES[SEL]),t.geom)>.85; }));
+ok('Etiqueta ★ Tu ruta habitual', (await p.textContent('#routes')).includes('Tu ruta habitual'));
+await p.click('#tripEdit'); await E(()=>{ document.querySelector('#trips [data-del]').click(); });
+await p.click('#tripEdit'); await E(()=>{ scrollTo(0,0); document.body.classList.remove('bigmap'); }); await p.waitForTimeout(300); 
+ok('Borrar un viaje frecuente', await E(()=>TRIPS.length===1 && JSON.parse(localStorage.getItem('peajes_trips')).length===1));
 ok('Sin errores JS en todo el recorrido', errors.length===0, errors.join(' | '));
 console.log(results.join('\n'));console.log(`\n${results.filter(x=>x.startsWith('PASS')).length}/${results.length} pruebas OK · OSRM:${osrmCalls} Valhalla:${valhallaCalls} Photon:${photonCalls} Nominatim:${nomiCalls}`);
 await b.close();srv.close();})();
