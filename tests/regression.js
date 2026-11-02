@@ -145,6 +145,24 @@ ok('Salida, parada y destino son arrastrables', await E(()=>pinLayer.getLayers()
 await E(()=>{ V={lat:6.745,lon:-76.011,label:'x',picked:true,exact:true}; document.getElementById('via').value='6.7450, -76.0110'; });
 await p.click('#go'); await p.waitForTimeout(1500);
 ok('Aviso cuando la parada hace ir y volver', (await p.textContent('#routes')).includes('vaya y vuelva'));
+// --- varias paradas
+await E(()=>{ map.closePopup(); EXTRA=[]; drawStopList(); A={lat:4.6,lon:-74.1,label:'a'}; B={lat:6.25,lon:-75.57,label:'b'};
+  V={lat:5.5,lon:-75.0,label:'5.5000, -75.0000',picked:true,exact:true}; document.getElementById('via').value=V.label; });
+await p.click('#go'); await p.waitForTimeout(1200);
+// agregar desde el mapa una parada ANTES de la primera (más cerca de la salida): debe quedar ordenada
+await E(()=>pointMenu(L.latLng(4.75,-74.5))); await p.waitForTimeout(150);
+ok('Menú ofrece "Agregar parada aquí" cuando ya hay una', (await p.textContent('.leaflet-popup-content')).includes('Agregar parada aquí'));
+await p.click('.leaflet-popup-content [data-w="V"]'); await p.waitForTimeout(1500);
+const urls=await E(()=>performance.getEntriesByType('resource').map(e=>decodeURIComponent(e.name)).filter(n=>n.includes('project-osrm')&&n.split('/driving/')[1].split('?')[0].split(';').length===4));
+ok('Ruta con 2 paradas en orden del viaje', urls.length>0 && urls[urls.length-1].includes('-74.1,4.6;-74.5,4.75;-75,5.5;-75.57,6.25'), urls.slice(-1)[0]);
+ok('Lista muestra la parada adicional', await E(()=>document.querySelectorAll('#vialist input').length===1));
+ok('Etiqueta "Por tus 2 paradas"', await E(()=>ROUTES[SEL].label==='Por tus 2 paradas'));
+await p.click('#vialist [data-x="0"]'); await p.waitForTimeout(1200);
+ok('Quitar parada adicional', await E(()=>EXTRA.length===0 && ROUTES[SEL].label==='Por tu punto'));
+await E(()=>{ for(let k=0;k<3;k++) EXTRA.push({lat:5+k*0.1,lon:-74.8,label:'x',exact:true}); });
+await E(()=>pointMenu(L.latLng(5.9,-75.2))); await p.waitForTimeout(150); await p.click('.leaflet-popup-content [data-w="V"]'); await p.waitForTimeout(300);
+ok('Límite de 4 paradas', await E(()=>1+EXTRA.length===4));
+await E(()=>{ EXTRA=[]; drawStopList(); V=null; document.getElementById('via').value=''; drawPins(); });
 ok('Sin errores JS en todo el recorrido', errors.length===0, errors.join(' | '));
 console.log(results.join('\n'));console.log(`\n${results.filter(x=>x.startsWith('PASS')).length}/${results.length} pruebas OK · OSRM:${osrmCalls} Valhalla:${valhallaCalls} Photon:${photonCalls} Nominatim:${nomiCalls}`);
 await b.close();srv.close();})();

@@ -111,7 +111,9 @@ function priceOf(t,cat){
   return {v:e.v,raw,e};
 }
 const UNV_EST=17500;
-let V=null;
+let V=null;          // parada principal (campo "Pasar por")
+let EXTRA=[];        // paradas adicionales (desde el mapa)
+const MAX_STOPS=4;
 let TOLLS=[], FIELDS=[], NAME_F=null, A=null, B=null, ROUTES=[], SEL=0;
 let ME=null, carMarker=null, watchId=null, lastMe=null;
 
@@ -247,6 +249,18 @@ async function geocodeBest(q,a,b){
   for(const r of d){ const p=[r.lat,r.lon]; const det=hav(A2,p)+hav(p,B2)-hav(A2,B2); if(det<bv){bv=det;best=r;} }
   return {lat:best.lat,lon:best.lon,label:best.name+(best.detail?', '+best.detail:''),road:best.road,town:best.town,q,detour:bv};
 }
+// Todas las paradas ordenadas a lo largo del viaje (por avance sobre la ruta actual, o por distancia a la salida)
+function allStops(){
+  const list=[V,...EXTRA].filter(Boolean); if(list.length<2||!A) return list;
+  const ref=ROUTES.find(r=>!r.forced)||ROUTES[SEL];
+  const key=p=> ref&&ref.coords ? progressKm([p.lat,p.lon],lite(ref)) : hav([A.lat,A.lon],[p.lat,p.lon]);
+  return list.map(p=>({p,k:key(p)})).sort((a,b)=>a.k-b.k).map(x=>x.p);
+}
+function hasStops(){ return !!(V||EXTRA.length); }
+function drawStopList(){
+  $('vialist').innerHTML=EXTRA.map((p,i)=>`<div class="field" style="border-top:1px solid #e6e7eb"><input value="${esc(p.label)}" readonly style="font-size:13.5px;color:var(--ink2)"><button class="iconbtn" data-x="${i}" type="button" aria-label="Quitar parada" style="color:var(--mute)">✕</button></div>`).join('');
+  $('vialist').querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>{ EXTRA.splice(+b.dataset.x,1); drawStopList(); drawPins(); if(A&&B) calc(); });
+}
 function setPoint(w,p){ if(w==='A')A=p; else if(w==='V')V=p; else B=p; drawPins(); }
 // Salida, parada y destino se pueden ARRASTRAR; al soltar se recalcula la ruta
 function dragPin(w,icon,latlng,tip){
@@ -254,7 +268,7 @@ function dragPin(w,icon,latlng,tip){
   if(tip) m.bindTooltip(tip,{direction:'top',offset:[0,-10]});
   m.on('dragstart',()=>{ setFollow(false); map.closePopup(); });
   m.on('dragend',()=>{ const ll=m.getLatLng(); const p={lat:ll.lat,lon:ll.lng,label:ll.lat.toFixed(4)+', '+ll.lng.toFixed(4),picked:true,exact:true};
-    if(w==='A'){ A=p; $('orig').value=p.label; } else if(w==='V'){ V=p; $('via').value=p.label; } else { B=p; $('dest').value=p.label; }
+    if(w==='A'){ A=p; $('orig').value=p.label; } else if(w==='V'){ V=p; $('via').value=p.label; } else if(typeof w==='number'){ EXTRA[w]=p; drawStopList(); } else { B=p; $('dest').value=p.label; }
     if(A&&B) calc(); });
   return m.addTo(pinLayer);
 }
@@ -262,15 +276,19 @@ const viaIcon=L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,15],html:'
 function drawPins(){ pinLayer.clearLayers();
   if(A && !A.isMe) dragPin('A',endIcon(false),[A.lat,A.lon],'Salida · arrástrala');
   if(V) dragPin('V',viaIcon,[V.lat,V.lon],'Parada · arrástrala para ajustar');
+  EXTRA.forEach((p,i)=>dragPin(i,viaIcon,[p.lat,p.lon],'Parada '+(i+2)+' · arrástrala'));
   if(B) dragPin('B',endIcon(true),[B.lat,B.lon],'Destino · arrástralo'); }
 function pointMenu(latlng){
   const p={lat:latlng.lat,lon:latlng.lng,label:latlng.lat.toFixed(4)+', '+latlng.lng.toFixed(4)};
   const html=`<div style="display:flex;flex-direction:column;gap:6px;min-width:150px">
     <b style="font-size:12px;color:#8a8f9c">Usar este punto como…</b>
-    <button class="chip" data-w="A">● Salida</button><button class="chip" data-w="V">○ Pasar por aquí</button><button class="chip" data-w="B">■ Destino</button></div>`;
+    <button class="chip" data-w="A">● Salida</button><button class="chip" data-w="V">○ ${V?'Agregar parada aquí':'Pasar por aquí'}</button><button class="chip" data-w="B">■ Destino</button></div>`;
   const pop=L.popup({closeButton:false}).setLatLng(latlng).setContent(html).openOn(map);
   setTimeout(()=>pop.getElement().querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{
-    const w=b.dataset.w; setPoint(w,{...p,picked:true,exact:true}); $(w==='A'?'orig':w==='V'?'via':'dest').value=p.label; map.closePopup(); if(A&&B) $('go').click(); }),0);
+    const w=b.dataset.w, pt={...p,picked:true,exact:true};
+    if(w==='V' && V){ if(1+EXTRA.length>=MAX_STOPS){ toast('Máximo '+MAX_STOPS+' paradas'); map.closePopup(); return; } EXTRA.push(pt); drawStopList(); drawPins(); toast('Parada '+(EXTRA.length+1)+' agregada'); }
+    else { setPoint(w,pt); $(w==='A'?'orig':w==='V'?'via':'dest').value=p.label; }
+    map.closePopup(); if(A&&B) $('go').click(); }),0);
 }
 map.on('contextmenu',e=>pointMenu(e.latlng));
 $('swap').onclick=()=>{ [A,B]=[B,A]; const v=$('orig').value; $('orig').value=$('dest').value; $('dest').value=v; if(B&&B.isMe){ B={...B,isMe:false}; } drawPins(); };
@@ -411,7 +429,8 @@ function checkOffRoute(lat,lon,acc){
   OFF=0; LAST_RR=Date.now(); REROUTING=true;
   toast('Te saliste de la ruta. Recalculando…');
   // si ya pasaste la parada, quitarla
-  if(V){ const pv=progressKm([V.lat,V.lon],r.coords), pm=progressKm([lat,lon],r.coords); if(pm>pv || hav([lat,lon],[V.lat,V.lon])<500){ V=null; $('via').value=''; } }
+  { const pm=progressKm([lat,lon],r.coords); const passed=q=>progressKm([q.lat,q.lon],r.coords)<pm || hav([lat,lon],[q.lat,q.lon])<500;
+    EXTRA=EXTRA.filter(q=>!passed(q)); if(V&&passed(V)){ V=EXTRA.shift()||null; $('via').value=V?V.label:''; } drawStopList(); }
   A={lat,lon,label:'Mi ubicación',isMe:true}; $('orig').value='Mi ubicación';
   calc({reroute:true});
 }
@@ -586,7 +605,7 @@ async function nameRoute(r){
 }
 
 // ---------- Rutas ----------
-async function osrm(a,b,extra='',via=null){ const pts=[a,via,b].filter(Boolean).map(p=>`${p.lon},${p.lat}`).join(';'); const d=await getJSON(`${OSRM}/route/v1/driving/${pts}?overview=full&geometries=geojson&alternatives=${via?'false':'3'}${extra}`); if(d.code!=='Ok') throw new Error(d.message||d.code); return d.routes; }
+async function osrm(a,b,extra='',via=null){ const pts=[a,...(Array.isArray(via)?via:[via]),b].filter(Boolean).map(p=>`${p.lon},${p.lat}`).join(';'); const d=await getJSON(`${OSRM}/route/v1/driving/${pts}?overview=full&geometries=geojson&alternatives=${via?'false':'3'}${extra}`); if(d.code!=='Ok') throw new Error(d.message||d.code); return d.routes; }
 let CALC_SEQ=0;
 async function calc(opt={}){
   const RR=!!opt.reroute; const seq=++CALC_SEQ; window._exTok=Symbol('cancel'); $('sorig').hidden=true; $('sdest').hidden=true; $('svia').hidden=true; $('go').textContent='Calculando…';
@@ -601,9 +620,9 @@ async function calc(opt={}){
       if(!V.road) st(`Parada: <b>${esc(V.label)}</b>. Si no es el lugar que quieres, elígelo de la lista al escribir o mantén presionado el mapa.`);
       if(V.road) st(`Para “${esc(q)}” usé el tramo que mejor queda en tu camino. Si no es el que quieres, mantén presionado el mapa justo sobre la vía y elige <b>Pasar por aquí</b>.`);
     }
-    drawPins(); if(!V) st('');
+    drawPins(); if(!hasStops()) st('');
     let routes=[];
-    if(V){ const vr=await osrm(A,B,'',V); if(vr[0]) routes.push({...vr[0],label:V.exact?'Por tu punto':'Por '+($('via').value.split(',')[0]||'tu parada'),forced:true}); }
+    if(hasStops()){ const stops=allStops(); const vr=await osrm(A,B,'',stops); if(vr[0]) routes.push({...vr[0],label:stops.length>1?'Por tus '+stops.length+' paradas':(V&&V.exact?'Por tu punto':'Por '+($('via').value.split(',')[0]||'tu parada')),forced:true}); }
     routes=routes.concat((await osrm(A,B)).map((r,i)=>({...r,label:i===0?'Ruta principal':'Alternativa '+i})));
     if($('avoid').checked){ try{ const nr=await osrm(A,B,'&exclude=toll'); if(nr[0]) routes.push({...nr[0],label:'Evitando peajes'}); }catch(e){} }
     if(seq!==CALC_SEQ) return;   // llegó un cálculo más nuevo
@@ -611,7 +630,7 @@ async function calc(opt={}){
     ROUTES.forEach(r=>r.coords=r.geometry.coordinates.map(c=>[c[1],c[0]]));
     renderResults(ROUTES[0]&&ROUTES[0].forced?0:pickByPrio(),RR&&FOLLOW?false:true);
     if(RR){ toast('Ruta recalculada desde tu ubicación'); if(FOLLOW&&ME) map.panTo([ME.lat,ME.lon]); }
-    if($('explore').checked && !V && !RR){
+    if($('explore').checked && !hasStops() && !RR){
       const token=Symbol(); window._exTok=token;
       st('Buscando más rutas por otros corredores…');
       const extra=await exploreRoutes(ROUTES.filter(r=>!r.forced));
@@ -678,8 +697,8 @@ function renderResults(sel,fit){
       <div class="rtslot">${rtBar(r)}</div>
       ${r.missing?`<div class="warnline">${r.missing} peaje(s) sin tarifa para esta categoría</div>`:''}</div>`; }).join('');
   const forced=ROUTES.find(r=>r.forced), auto=ROUTES.find(r=>!r.forced);
-  if(forced && (forced._loop??(forced._loop=hasLoop(lite(forced))))) $('routes').insertAdjacentHTML('afterbegin',`<div class="status err" style="margin:0 0 4px">La parada hace que la ruta <b>vaya y vuelva</b> por la misma vía: quedó pasada del desvío que quieres. <b>Arrastra el círculo blanco</b> en el mapa hasta la vía correcta (antes del cruce o sobre la vía hacia tu destino).</div>`);
-  else if(forced&&auto&&forced.distance>auto.distance*1.25) $('routes').insertAdjacentHTML('afterbegin',`<div class="status err" style="margin:0 0 4px">La parada <b>“${esc(V&&V.exact?'tu punto':$('via').value.split(',')[0])}”</b> agrega ${Math.round((forced.distance-auto.distance)/1000)} km de desvío: probablemente queda detrás de tu salida o fuera del camino. Elige un punto que esté <b>entre</b> la salida y el destino.</div>`);
+  if(forced && (forced._loop??(forced._loop=hasLoop(lite(forced))))) $('routes').insertAdjacentHTML('afterbegin',`<div class="status err" style="margin:0 0 4px">Una parada hace que la ruta <b>vaya y vuelva</b> por la misma vía: quedó pasada del desvío que quieres. <b>Arrastra el círculo blanco</b> en el mapa hasta la vía correcta (antes del cruce o sobre la vía hacia tu destino).</div>`);
+  else if(forced&&auto&&forced.distance>auto.distance*1.25) $('routes').insertAdjacentHTML('afterbegin',`<div class="status err" style="margin:0 0 4px">${EXTRA.length?'Las paradas agregan':'La parada <b>“'+esc(V&&V.exact?'tu punto':$('via').value.split(',')[0])+'”</b> agrega'} ${Math.round((forced.distance-auto.distance)/1000)} km de desvío: probablemente queda detrás de tu salida o fuera del camino. Elige un punto que esté <b>entre</b> la salida y el destino.</div>`);
   $('routes').insertAdjacentHTML('beforeend',`<p class="foot" style="margin:2px 2px 0">Los tiempos son estimados sin tráfico. Si sabes que una vía es más fluida, escríbela en <b>“Pasar por”</b> para forzar la ruta.</p>`);
   $('routes').querySelectorAll('.rc').forEach(c=>c.onclick=()=>{ renderResults(+c.dataset.i,false); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); });
   if(s._rt){ setTimeout(()=>paintRoadTypes(SEL),0); } else { $('rtlegend').innerHTML='<span class="foot">Cargando tipo de vía…</span>'; paintRoadTypes(SEL); }
@@ -702,7 +721,7 @@ function renderResults(sel,fit){
 }
 
 // ---------- Init ----------
-setupAC($('orig'),$('sorig'),'A'); setupAC($('via'),$('svia'),'V'); $('viaclr').onclick=()=>{ V=null; $('via').value=''; drawPins(); if(A&&B) $('go').click(); }; setupAC($('dest'),$('sdest'),'B');
+setupAC($('orig'),$('sorig'),'A'); setupAC($('via'),$('svia'),'V'); $('viaclr').onclick=()=>{ V=EXTRA.shift()||null; $('via').value=V?V.label:''; drawStopList(); drawPins(); if(A&&B) $('go').click(); }; setupAC($('dest'),$('sdest'),'B');
 $('file').onchange=async e=>{ const f=e.target.files[0]; if(!f) return; const t=await f.text();
   try{ const d=/\.csv$/i.test(f.name)?parseCSV(t):parseGeoJSON(JSON.parse(t)); if(!d.tolls.length) throw new Error('sin puntos'); applyData(d); }catch(err){ st('No pude leer el archivo: '+esc(err.message),'err'); } };
 $('reload').onclick=()=>boot(true);
