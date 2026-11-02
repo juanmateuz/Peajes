@@ -766,6 +766,26 @@ details[open] summary:after{content:"–"}
 .foot{font-size:11.5px;color:var(--mute);margin-top:12px;line-height:1.5}
 code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
 
+/* Vehículos y resumen */
+.vehs{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.veh{flex:0 0 auto;border:1px solid var(--line);background:#fff;border-radius:12px;padding:8px 12px;font:inherit;font-size:13px;cursor:pointer;text-align:left;color:var(--ink)}
+.veh small{display:block;color:var(--mute);font-size:11px;margin-top:1px}
+.veh.on{border-color:var(--ink);background:var(--ink);color:#fff}.veh.on small{color:#c9ccd3}
+.veh.add{border-style:dashed;color:var(--ink2)}
+.seg{display:flex;background:#f1f2f4;border-radius:10px;padding:3px;gap:3px}
+.seg button{flex:1;border:0;background:transparent;border-radius:8px;padding:8px;font:inherit;font-size:13px;font-weight:600;color:var(--ink2);cursor:pointer}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.sum{margin-top:12px;background:var(--ink);color:#fff;border-radius:var(--r);padding:16px}
+.sum h4{margin:0 0 10px;font-size:12px;font-weight:600;color:#aab0bd;text-transform:uppercase;letter-spacing:.06em;display:flex;justify-content:space-between}
+.sum .row{display:flex;justify-content:space-between;font-size:13.5px;padding:4px 0;color:#dfe2e8}
+.sum .row b{color:#fff;font-weight:600}
+.sum .tot{border-top:1px solid #333845;margin-top:8px;padding-top:10px;font-size:18px;font-weight:700;color:#fff}
+.sum .note{font-size:11.5px;color:#9aa1ae;margin-top:8px;line-height:1.45}
+#vmodal{position:fixed;inset:0;z-index:3000;background:rgba(17,19,24,.45);display:flex;align-items:flex-end;justify-content:center}
+#vmodal[hidden]{display:none}
+#vmodal .box{background:#fff;width:min(460px,100%);border-radius:18px 18px 0 0;padding:20px}
+#vmodal h3{margin:0 0 12px;font-size:16px}
+#vmodal label{display:block;font-size:12px;color:var(--mute);margin:10px 0 4px}
 /* Tabla de datos */
 #dmodal{position:fixed;inset:0;z-index:3000;background:rgba(17,19,24,.45);display:flex;align-items:flex-end;justify-content:center}
 #dmodal[hidden]{display:none}
@@ -836,7 +856,11 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
     <button class="chip" data-p="short" type="button">📏 Más corta</button>
     <button class="chip" data-p="cheap" type="button">💰 Más barata</button>
   </div>
-  <div class="lbl">Tu vehículo</div>
+  <div class="lbl">Viaje</div>
+  <div class="seg" id="trip"><button data-t="1" class="on" type="button">Solo ida</button><button data-t="2" type="button">Ida y vuelta</button></div>
+  <div class="lbl" style="display:flex;justify-content:space-between">Mis vehículos <a href="#" id="vedit" style="color:var(--acc);text-transform:none;letter-spacing:0;font-weight:500;text-decoration:none">Editar</a></div>
+  <div class="vehs" id="vehs"></div>
+  <div class="lbl">Categoría de peaje</div>
   <select id="cat"><option value="">Cargando peajes…</option></select>
   <p class="foot" style="margin-top:6px">La mayoría de carros particulares son <b>Cat. I</b>. La clasificación exacta (ejes, llantas) puede variar según el peaje. Las motos no pagan en la mayoría de peajes nacionales.</p>
 
@@ -846,15 +870,16 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
       <div><label>Precio galón (COP)</label><input class="in" id="gal" type="number" inputmode="numeric" placeholder="tu precio"></div>
       <div><label>Rendimiento (km/gal)</label><input class="in" id="kmg" type="number" inputmode="numeric" placeholder="ej. 40"></div>
     </div>
-    <label class="check"><input type="checkbox" id="avoid"> Probar también una ruta evitando peajes (según OpenStreetMap, puede ser incompleto)</label>
+    <label class="check"><input type="checkbox" id="avoid"><span>Probar también una ruta evitando peajes (según OpenStreetMap, puede ser incompleto)</span></label>
     <div style="margin-top:10px"><label style="font-size:12px;color:var(--mute)">Peajes sin tarifa confirmada (Cat. I)</label><select id="unv"><option value="est">Usar $17.500 (estimado)</option><option value="data">Usar dato de Supertransporte</option></select></div>
-    <label class="check"><input type="checkbox" id="diff"> Tengo <b>tarifa diferencial</b> de Autopistas del Café (residente de Manizales, Chinchiná, Villamaría, Palestina, Santa Rosa o Circasia): Tarapacá I, II y Circasia a $700. Debes estar inscrito con el concesionario.</label>
+    <label class="check"><input type="checkbox" id="diff"><span>Tengo <b>tarifa diferencial</b> de Autopistas del Café (residente de Manizales, Chinchiná, Villamaría, Palestina, Santa Rosa o Circasia): Tarapacá I, II y Circasia a $700. Debes estar inscrito con el concesionario.</span></label>
     <div style="margin-top:10px"><label style="font-size:12px;color:var(--mute)">Distancia máxima peaje–ruta (m)</label><input class="in" id="tol" type="number" value="120"></div>
   </details>
 
   <button class="go" id="go">Calcular ruta</button>
   <div class="status" id="st">Cargando peajes…</div>
   <div class="routes" id="routes"></div>
+  <div id="summary"></div>
   <div id="startwrap"></div>
   <div class="tl" id="tl"></div>
 
@@ -881,6 +906,19 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
   </details>
   <p class="foot">Rutas: OSRM · Mapa: © Esri / OpenStreetMap · Peajes: Supertransporte.</p>
 </aside>
+<div id="vmodal" hidden><div class="box">
+  <h3 id="vtitle">Nuevo vehículo</h3>
+  <label>Nombre</label><input class="in" id="vname" placeholder="Ej: Mi Mazda 3">
+  <label>Categoría de peaje</label><select id="vcat">
+    <option value="1">Cat. I · Carro, campero o camioneta</option><option value="2">Cat. II · Bus, buseta o microbús</option>
+    <option value="3">Cat. III · Camión pequeño (2 ejes)</option><option value="4">Cat. IV · Camión grande (2 ejes)</option>
+    <option value="5">Cat. V · Camión de 3 o 4 ejes</option><option value="6">Cat. VI · Tractomula de 5 ejes</option><option value="7">Cat. VII · Tractomula de 6+ ejes</option></select>
+  <label>Combustible</label><select id="vfuel"><option>Gasolina corriente</option><option>Gasolina extra</option><option>Diésel (ACPM)</option><option>GNV</option></select>
+  <div class="grid2"><div><label>Rendimiento (km por galón)</label><input class="in" id="vkmg" type="number" inputmode="decimal" placeholder="ej. 40"></div>
+  <div><label>Precio del galón (COP)</label><input class="in" id="vgal" type="number" inputmode="numeric" placeholder="tu precio"></div></div>
+  <p class="foot">Para GNV usa km por m³ y el precio del m³. Se guarda solo en este navegador.</p>
+  <div style="display:flex;gap:8px;margin-top:14px"><button class="chip" id="vdel" style="color:var(--bad)">Eliminar</button><span style="flex:1"></span><button class="chip" id="vcancel">Cancelar</button><button class="chip on" id="vsave">Guardar</button></div>
+</div></div>
 <div id="dmodal" hidden><div class="box">
   <div class="hd"><b>Datos del tablero de Supertransporte</b>
     <input class="in" id="dq" placeholder="Buscar peaje, departamento…" style="max-width:260px">
@@ -1069,6 +1107,7 @@ function applyData(d,fromCache=false){
   if(!num.length) sel.innerHTML='<option value="">Sin campo de tarifa en los datos</option>';
   num.forEach(f=>{ const o=document.createElement('option'); o.value=f.name; o.textContent=catLabel(f); sel.appendChild(o); });
   try{ const sv=localStorage.getItem('peajes_cat'); if(sv&&num.some(f=>f.name===sv)) sel.value=sv; }catch(e){}
+  applyVehToFields(VEHS.find(v=>v.id===VSEL));
   drawTolls();
   $('meta').innerHTML=`<b>${TOLLS.length}</b> peajes${fromCache?' (caché local)':''}.<br>Fuente: ${d.source}<br>Nombre: <code>${esc(NAME_F||'—')}</code> · Tarifas: ${num.map(f=>'<code>'+esc(f.name)+'</code>').join(' ')||'ninguna'}`;
   st(`${TOLLS.length} peajes cargados.`,'ok'); setTimeout(()=>{ if($('st').textContent.includes('peajes cargados')) st(''); },2500);
@@ -1184,6 +1223,41 @@ function pickByPrio(){
     return t+(gal&&kmg? r.distance/1000/kmg*gal : 0) + r.duration/1e6; };
   let b=0; ROUTES.forEach((r,i)=>{ if(val(r)<val(ROUTES[b])) b=i; }); return b;
 }
+// ---------- Vehículos ----------
+let VEHS=[], VSEL=null, VEDIT=null, TRIP=1;
+try{ VEHS=JSON.parse(localStorage.getItem('peajes_vehs')||'[]'); VSEL=localStorage.getItem('peajes_vsel'); TRIP=+(localStorage.getItem('peajes_trip')||1)||1; }catch(e){}
+const saveVehs=()=>{ try{ localStorage.setItem('peajes_vehs',JSON.stringify(VEHS)); localStorage.setItem('peajes_vsel',VSEL||''); }catch(e){} };
+const RNV=['','I','II','III','IV','V','VI','VII'];
+function drawVehs(){
+  $('vehs').innerHTML=VEHS.map(v=>`<button class="veh ${v.id===VSEL?'on':''}" data-id="${v.id}" type="button">${esc(v.name)}<small>Cat. ${RNV[v.cat]} · ${v.kmg||'—'} km/gal</small></button>`).join('')+
+    `<button class="veh add" id="vadd" type="button">＋ Agregar<small>${VEHS.length?'otro vehículo':'tu carro'}</small></button>`;
+  $('vehs').querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>selectVeh(b.dataset.id));
+  $('vadd').onclick=()=>openVeh(null);
+}
+function applyVehToFields(v){
+  if(!v) return;
+  const opt=[...$('cat').options].find(o=>{ const f=FIELDS.find(x=>x.name===o.value); return f&&catNum(f)===+v.cat; });
+  if(opt) $('cat').value=opt.value;
+  $('kmg').value=v.kmg||''; $('gal').value=v.gal||'';
+}
+function selectVeh(id){ VSEL=(VSEL===id?null:id); saveVehs(); drawVehs(); applyVehToFields(VEHS.find(v=>v.id===VSEL)); if(ROUTES.length) renderResults(); }
+function openVeh(id){
+  VEDIT=id; const v=VEHS.find(x=>x.id===id)||{name:'',cat:1,fuel:'Gasolina corriente',kmg:'',gal:''};
+  $('vtitle').textContent=id?'Editar vehículo':'Nuevo vehículo'; $('vname').value=v.name; $('vcat').value=v.cat; $('vfuel').value=v.fuel; $('vkmg').value=v.kmg; $('vgal').value=v.gal;
+  $('vdel').style.display=id?'':'none'; $('vmodal').hidden=false;
+}
+$('vcancel').onclick=()=>$('vmodal').hidden=true;
+$('vsave').onclick=()=>{
+  const v={id:VEDIT||String(Date.now()),name:$('vname').value.trim()||'Mi vehículo',cat:+$('vcat').value,fuel:$('vfuel').value,kmg:+$('vkmg').value||'',gal:+$('vgal').value||''};
+  const i=VEHS.findIndex(x=>x.id===v.id); if(i>=0) VEHS[i]=v; else VEHS.push(v);
+  VSEL=v.id; saveVehs(); $('vmodal').hidden=true; drawVehs(); applyVehToFields(v); if(ROUTES.length) renderResults();
+};
+$('vdel').onclick=()=>{ VEHS=VEHS.filter(x=>x.id!==VEDIT); if(VSEL===VEDIT) VSEL=null; saveVehs(); $('vmodal').hidden=true; drawVehs(); if(ROUTES.length) renderResults(); };
+$('vedit').onclick=e=>{ e.preventDefault(); if(VSEL) openVeh(VSEL); else if(VEHS[0]) openVeh(VEHS[0].id); else openVeh(null); };
+function paintTrip(){ document.querySelectorAll('#trip button').forEach(b=>b.classList.toggle('on',+b.dataset.t===TRIP)); }
+document.querySelectorAll('#trip button').forEach(b=>b.onclick=()=>{ TRIP=+b.dataset.t; paintTrip(); try{localStorage.setItem('peajes_trip',TRIP);}catch(e){} if(ROUTES.length) renderResults(); });
+paintTrip(); drawVehs();
+
 let FOLLOW=false;
 function setFollow(on){ FOLLOW=on; $('fabLoc').classList.toggle('on',on); }
 function centerCar(){
@@ -1272,7 +1346,7 @@ function renderResults(sel,fit){
   ROUTES.forEach(r=>{ r.hits=TOLLS.length?tollsOnRoute(r.coords,tol):[];
     r.missing=r.hits.filter(h=>priceOf(h.t,cat).v==null).length;
     r.tollCost=cat?r.hits.reduce((s,h)=>s+(priceOf(h.t,cat).v||0),0):null;
-    r.fuel=gal&&kmg?r.distance/1000/kmg*gal:null; r.total=(r.tollCost||0)+(r.fuel||0); });
+    r.gals=kmg?r.distance/1000/kmg:null; r.fuel=gal&&kmg?r.gals*gal:null; if(r.tollCost!=null) r.tollCost*=TRIP; if(r.fuel!=null){r.fuel*=TRIP; r.gals*=TRIP;} r.total=(r.tollCost||0)+(r.fuel||0); });
   const fastest=Math.min(...ROUTES.map(r=>r.duration)), cheapest=Math.min(...ROUTES.map(r=>r.total)), shortest=Math.min(...ROUTES.map(r=>r.distance));
 
   routeLayer.clearLayers();
@@ -1297,13 +1371,21 @@ function renderResults(sel,fit){
     const tags=(r.duration===fastest?'<span class="pill fast">Más rápida</span>':'')+(ROUTES.length>1&&r.distance===shortest?'<span class="pill short">Más corta</span>':'')+(ROUTES.length>1&&r.total===cheapest&&(r.tollCost!=null||r.fuel!=null)?'<span class="pill cheap">Más barata</span>':'');
     return `<div class="rc ${i===SEL?'sel':''}" data-i="${i}">
       <div class="top"><div><div class="time">${hm(r.duration)}</div><div class="name">${r.label}${tags}</div></div>
-      <div class="cost"><b>${fmt(r.fuel!=null?r.total:r.tollCost)}</b><span>${r.fuel!=null?'peajes + combustible':'en peajes'}</span></div></div>
-      <div class="meta"><span>${(r.distance/1000).toFixed(0)} <i>km</i></span><span>${r.hits.length} <i>peajes</i></span><span>${fmt(r.tollCost)} <i>peajes</i></span>${r.fuel!=null?`<span>${fmt(r.fuel)} <i>combustible</i></span>`:''}</div>
+      <div class="cost"><b>${fmt(r.fuel!=null?r.total:r.tollCost)}</b><span>${r.fuel!=null?'peajes + combustible':'en peajes'}${TRIP===2?' · ida y vuelta':''}</span></div></div>
+      <div class="meta"><span>${(r.distance/1000*TRIP).toFixed(0)} <i>km${TRIP===2?' ida y vuelta':''}</i></span><span>${r.hits.length*TRIP} <i>pasos</i></span><span>${fmt(r.tollCost)} <i>peajes</i></span>${r.fuel!=null?`<span>${fmt(r.fuel)} <i>combustible</i></span>`:''}</div>
       ${r.missing?`<div class="warnline">${r.missing} peaje(s) sin tarifa para esta categoría</div>`:''}</div>`; }).join('');
   const forced=ROUTES.find(r=>r.forced), auto=ROUTES.find(r=>!r.forced);
   if(forced&&auto&&forced.distance>auto.distance*1.25) $('routes').insertAdjacentHTML('afterbegin',`<div class="status err" style="margin:0 0 4px">La parada <b>“${esc($('via').value.split(',')[0])}”</b> agrega ${Math.round((forced.distance-auto.distance)/1000)} km de desvío: probablemente queda detrás de tu salida o fuera del camino. Elige un punto que esté <b>entre</b> la salida y el destino.</div>`);
   $('routes').insertAdjacentHTML('beforeend',`<p class="foot" style="margin:2px 2px 0">Los tiempos son estimados sin tráfico. Si sabes que una vía es más fluida, escríbela en <b>“Pasar por”</b> para forzar la ruta.</p>`);
   $('routes').querySelectorAll('.rc').forEach(c=>c.onclick=()=>renderResults(+c.dataset.i));
+  { const v=VEHS.find(x=>x.id===VSEL); const unit=v&&v.fuel==='GNV'?'m³':'gal';
+    $('summary').innerHTML=`<div class="sum"><h4><span>Resumen · ${TRIP===2?'ida y vuelta':'solo ida'}</span><span>${esc(v?v.name:'Sin vehículo')}</span></h4>
+      <div class="row"><span>Distancia</span><b>${(s.distance/1000*TRIP).toFixed(0)} km</b></div>
+      <div class="row"><span>Tiempo al volante</span><b>${hm(s.duration*TRIP)}</b></div>
+      <div class="row"><span>Combustible${s.gals!=null?' ('+s.gals.toFixed(1)+' '+unit+')':''}</span><b>${s.fuel!=null?fmt(s.fuel):'falta rendimiento o precio'}</b></div>
+      <div class="row"><span>Peajes (${s.hits.length*TRIP} pasos)</span><b>${fmt(s.tollCost)}</b></div>
+      <div class="row tot"><span>Total</span><span>${fmt(s.total)}</span></div>
+      <div class="note">${TRIP===2?'El regreso se calcula por la misma ruta y con los mismos peajes; algunos peajes cobran en un solo sentido, así que el valor real puede ser menor. ':''}Combustible estimado en carretera sin tráfico; en ciudad y en subidas el consumo es mayor.${v?'':' Toca <b>＋ Agregar</b> para guardar tu carro.'}</div></div>`; }
 
   let tl=`<h3>Peajes en el camino <span>${s.hits.length}</span></h3>`;
   if(!s.hits.length) tl+=`<p class="foot">${TOLLS.length?'No se detectaron peajes a menos de '+tol+' m de esta ruta.':'Aún no hay datos de peajes cargados.'}</p>`;
