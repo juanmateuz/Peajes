@@ -22,6 +22,7 @@ await p.route('**/*',async r=>{const u=r.request().url();
   {attributes:{OBJECTID:3,nombre:'Peaje Desconocido',cat_1:9000,cat_2:9000},geometry:{x:-74.3,y:4.675}}]});
  if(u.includes('photon.komoot.io')){photonCalls++;const q=decodeURIComponent(u.split('q=')[1].split('&')[0]);
    const F=(lat,lon,name,key)=>({geometry:{coordinates:[lon,lat]},properties:{name,countrycode:'CO',state:'X',osm_key:key||'place'}});
+   if(q.startsWith('Honda'))return J(r,{features:[F(5.0,-74.95,'Honda','waterway'),F(5.205,-74.74,'Honda','place')].map(f=>(f.properties.osm_value=f.properties.osm_key==='place'?'town':'stream',f))});
    if(q.startsWith('Panam'))return J(r,{features:[F(9,-70,'Panamericana','highway'),F(5.5,-75.0,'Panamericana','highway'),F(3,-77,'Panamericana','highway')]});
    return J(r,{features:[q.startsWith('Bog')?F(4.6,-74.1,'Bogotá'):F(6.25,-75.57,'Medellín')]});}
  if(u.includes('nominatim')){nomiCalls++;return J(r,{address:{town:'<img src=x onerror=window.__xss=1>'}});}
@@ -121,6 +122,12 @@ await p.click('#dclose');
 // --- menú mantener presionado
 await E(()=>pointMenu(L.latLng(5,-75))); await p.waitForTimeout(100);
 ok('Menú de punto en mapa', (await p.textContent('.leaflet-popup-content')).includes('Pasar por aquí'));
+const hv=await E(()=>geocodeBest('Honda',{lat:5.19,lon:-75.05},{lat:5.31,lon:-74.91}));
+ok('Parada con nombre de municipio elige el municipio (Honda)', hv.town && Math.abs(hv.lat-5.205)<1e-6);
+await p.evaluate(()=>{ map.closePopup(); setFollow(false); renderResults(0,true); scrollTo(0,0); }); await p.waitForTimeout(300);
+const tp=await E(()=>{ const c=ROUTES[1].coords; const q=c[Math.floor(c.length*0.5)]; const pp=map.latLngToContainerPoint(q); const r=map.getContainer().getBoundingClientRect(); return {x:r.left+pp.x+12,y:r.top+pp.y}; });
+await p.mouse.click(tp.x,tp.y); await p.waitForTimeout(300);
+ok('Tocar cerca de la línea alterna la selecciona', await E(()=>SEL===1));
 ok('Sin errores JS en todo el recorrido', errors.length===0, errors.join(' | '));
 console.log(results.join('\n'));console.log(`\n${results.filter(x=>x.startsWith('PASS')).length}/${results.length} pruebas OK · OSRM:${osrmCalls} Valhalla:${valhallaCalls} Photon:${photonCalls} Nominatim:${nomiCalls}`);
 await b.close();srv.close();})();

@@ -217,8 +217,9 @@ async function boot(force=false){
 // ---------- Búsqueda de lugares ----------
 // Photon devuelve GeoJSON; lo normalizamos a {lat,lon,name,detail,road}
 function photonItems(d){ return (d.features||[]).filter(f=>!f.properties.countrycode||f.properties.countrycode==='CO').map(f=>{ const p=f.properties;
-  const detail=[p.street&&p.name!==p.street?p.street:null,p.city||p.county,p.state].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).join(', ');
-  return {lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0],name:p.name||p.street||p.city||'Lugar',detail,road:p.osm_key==='highway'}; }); }
+  const detail=[p.street&&p.name!==p.street?p.street:null,p.city&&p.city!==p.name?p.city:(p.county&&p.county!==p.name?p.county:null),p.state].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).join(', ');
+  return {lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0],name:p.name||p.street||p.city||'Lugar',detail,road:p.osm_key==='highway',
+    town:p.osm_key==='place'&&/^(city|town|village|municipality)$/.test(p.osm_value||p.type||''),key:p.osm_key,val:p.osm_value}; }); }
 async function photon(q,limit=6,bbox=CO_BBOX){ return photonItems(await getJSON(`${PHOTON}?q=${encodeURIComponent(q)}&limit=${limit}&bbox=${bbox}`,{},10000)); }
 function setupAC(inp,box,which){
   let tm, seq=0;
@@ -226,7 +227,7 @@ function setupAC(inp,box,which){
     tm=setTimeout(async()=>{ const my=++seq; try{
       const items=await photon(q); if(my!==seq) return; box.innerHTML='';
       items.forEach(p=>{ const e=document.createElement('div'); e.innerHTML=`<b>${esc(p.name)}</b>${esc(p.detail)}`;
-        e.onclick=()=>{ setPoint(which,{lat:p.lat,lon:p.lon,label:p.name+(p.detail?', '+p.detail:''),road:p.road,q:p.name}); inp.value=p.name+(p.detail?', '+p.detail.split(',')[0]:''); box.hidden=true; }; box.appendChild(e); });
+        e.onclick=()=>{ setPoint(which,{lat:p.lat,lon:p.lon,label:p.name+(p.detail?', '+p.detail:''),road:p.road,town:p.town,picked:!p.road,q:p.name}); inp.value=p.name+(p.detail?', '+p.detail.split(',')[0]:''); box.hidden=true; }; box.appendChild(e); });
       box.hidden=!items.length||document.activeElement!==inp; }catch(e){ box.hidden=true; } },350); });
   document.addEventListener('click',ev=>{ if(!box.contains(ev.target)&&ev.target!==inp) box.hidden=true; });
 }
@@ -235,9 +236,12 @@ async function geocodeBest(q,a,b){
   const pad=.3, bb=[Math.min(a.lon,b.lon)-pad,Math.min(a.lat,b.lat)-pad,Math.max(a.lon,b.lon)+pad,Math.max(a.lat,b.lat)+pad].join(',');
   let d=await photon(q,15,bb); if(!d.length) d=await photon(q,15);
   if(!d.length) throw new Error('No encontré “'+q+'”');
+  // Si el nombre coincide exacto con un municipio/pueblo, se usa ese (evita veredas, quebradas o calles homónimas)
+  const nq=norm(q.split(',')[0]); const towns=d.filter(r=>r.town&&norm(r.name)===nq);
+  if(towns.length) d=towns; else { const exact=d.filter(r=>norm(r.name)===nq); if(exact.length) d=exact; }
   const A2=[a.lat,a.lon], B2=[b.lat,b.lon]; let best=null, bv=1e18;
   for(const r of d){ const p=[r.lat,r.lon]; const det=hav(A2,p)+hav(p,B2)-hav(A2,B2); if(det<bv){bv=det;best=r;} }
-  return {lat:best.lat,lon:best.lon,label:best.name+(best.detail?', '+best.detail:''),road:best.road,q,detour:bv};
+  return {lat:best.lat,lon:best.lon,label:best.name+(best.detail?', '+best.detail:''),road:best.road,town:best.town,q,detour:bv};
 }
 function setPoint(w,p){ if(w==='A')A=p; else if(w==='V')V=p; else B=p; drawPins(); }
 function drawPins(){ pinLayer.clearLayers();
@@ -576,12 +580,13 @@ async function calc(opt={}){
     if(!A&&$('orig').value.trim()) A=await geocode($('orig').value.trim());
     if(!B&&$('dest').value.trim()) B=await geocode($('dest').value.trim());
     if(!A||!B){ st('Indica origen y destino.','err'); return; }
-    if($('via').value.trim() && (!V || V.road)){
+    if($('via').value.trim() && (!V || V.road || (!V.town && V.picked!==true))){
       const q=(V&&V.q)||$('via').value.split(',')[0].trim();
       V=await geocodeBest(q,A,B);
+      if(!V.road) st(`Parada: <b>${esc(V.label)}</b>. Si no es el lugar que quieres, elígelo de la lista al escribir o mantén presionado el mapa.`);
       if(V.road) st(`Para “${esc(q)}” usé el tramo que mejor queda en tu camino. Si no es el que quieres, mantén presionado el mapa justo sobre la vía y elige <b>Pasar por aquí</b>.`);
     }
-    drawPins(); if(!V||!V.road) st('');
+    drawPins(); if(!V) st('');
     let routes=[];
     if(V){ const vr=await osrm(A,B,'',V); if(vr[0]) routes.push({...vr[0],label:'Por '+($('via').value.split(',')[0]||'tu parada'),forced:true}); }
     routes=routes.concat((await osrm(A,B)).map((r,i)=>({...r,label:i===0?'Ruta principal':'Alternativa '+i})));
@@ -625,14 +630,16 @@ function renderResults(sel,fit){
   const fastest=Math.min(...ROUTES.map(r=>r.duration)), cheapest=Math.min(...ROUTES.map(r=>r.total)), shortest=Math.min(...ROUTES.map(r=>r.distance));
 
   routeLayer.clearLayers(); rtLayer.clearLayers(); bubLayer.clearLayers();
+  // Alternas como en Google Maps: azul claro sólido; toda la línea es tocable (zona de 40 px)
   ROUTES.forEach((r,i)=>{ if(i===SEL) return;
-    L.polyline(r.coords,{color:'#7c8799',weight:4,opacity:.45,dashArray:'2 7',lineCap:'round'}).addTo(routeLayer);
-    L.polyline(r.coords,{color:'#000',weight:22,opacity:0}).on('click',()=>renderResults(i,false)).addTo(routeLayer); });
+    const pick=e=>{ L.DomEvent.stop(e); renderResults(i,false); };
+    L.polyline(r.coords,{color:'#7aa0e8',weight:9,opacity:.55,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
+    L.polyline(r.coords,{color:'#b9cff7',weight:6,opacity:1,lineCap:'round',lineJoin:'round'}).on('click',pick).addTo(routeLayer);
+    L.polyline(r.coords,{color:'#000',weight:40,opacity:0,lineCap:'round'}).on('click',pick).addTo(routeLayer); });
   tollLayer.eachLayer(m=>m.setStyle({fillOpacity:.25,opacity:.25,radius:2.5}));
   const s=ROUTES[SEL];
-  L.polyline(s.coords,{color:'#1f3fa8',weight:11,opacity:.25,lineCap:'round',lineJoin:'round'}).addTo(routeLayer);
-  L.polyline(s.coords,{color:'#ffffff',weight:9,lineCap:'round',lineJoin:'round'}).addTo(routeLayer);
-  const main=L.polyline(s.coords,{color:'#2f6bff',weight:6,lineCap:'round',lineJoin:'round'}).addTo(routeLayer);
+  L.polyline(s.coords,{color:'#0b2e8a',weight:10,opacity:.9,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
+  const main=L.polyline(s.coords,{color:'#2f6bff',weight:7,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
   s.hits.forEach((h,k)=>L.marker([h.t.lat,h.t.lon],{icon:tollPin(k+1,!!(isCatI()&&verifOf(h.t))),zIndexOffset:500}).bindPopup(popup(h.t)).addTo(routeLayer));
   carAtRouteStart(s);
   // burbujas para elegir en el mapa
