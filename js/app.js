@@ -781,7 +781,7 @@ async function forcedVariants(stops){
 }
 let CALC_SEQ=0;
 async function calc(opt={}){
-  const RR=!!opt.reroute; const seq=++CALC_SEQ; window._exTok=Symbol('cancel'); $('sorig').hidden=true; $('sdest').hidden=true; $('svia').hidden=true; $('go').textContent='Calculando…';
+  const RR=!!opt.reroute; if(!RR) showTab('rutas'); const seq=++CALC_SEQ; window._exTok=Symbol('cancel'); $('sorig').hidden=true; $('sdest').hidden=true; $('svia').hidden=true; $('go').textContent='Calculando…';
   try{
     if(!$('orig').value.trim()) A=null; if(!$('dest').value.trim()) B=null; if(!$('via').value.trim()) V=null;
     if(!A&&$('orig').value.trim()) A=await geocode($('orig').value.trim());
@@ -889,7 +889,7 @@ function renderResults(sel,fit){
       <div class="row"><span>Combustible${s.gals!=null?' ('+s.gals.toFixed(1)+' '+unit+')':''}</span><b>${s.fuel!=null?fmt(s.fuel):'falta rendimiento o precio'}</b></div>
       <div class="row"><span>Peajes (${s.hits.length*TRIP} pasos)</span><b>${fmt(s.tollCost)}</b></div>
       <div class="row tot"><span>Total</span><span>${fmt(s.total)}</span></div>
-      <div class="note">${TRIP===2?'El regreso se calcula por la misma ruta y con los mismos peajes; algunos peajes cobran en un solo sentido, así que el valor real puede ser menor. ':''}Combustible estimado en carretera sin tráfico; en ciudad y en subidas el consumo es mayor.${v?'':' Toca <b>＋ Agregar</b> para guardar tu carro.'}</div></div>`; }
+      <div class="note">${TRIP===2?'El regreso se calcula por la misma ruta y con los mismos peajes; algunos peajes cobran en un solo sentido, así que el valor real puede ser menor. ':''}Combustible estimado en carretera sin tráfico; en ciudad y en subidas el consumo es mayor.${v?'':' Guarda tu carro en la pestaña <b>Vehículo</b> para calcular el combustible.'}</div></div>`; }
 
   let tl=`<h3>Peajes en el camino <span>${s.hits.length}</span></h3>`;
   if(!s.hits.length) tl+=`<p class="foot">${TOLLS.length?'No se detectaron peajes a menos de '+tol+' m de esta ruta.':'Aún no hay datos de peajes cargados.'}</p>`;
@@ -897,8 +897,20 @@ function renderResults(sel,fit){
     if(!p.e) return fmt(p.v)+'<div class="sm" style="text-align:right">sin verificar</div>';
     const chg=p.raw!=null&&p.raw!==p.v; return `${fmt(p.v)} <span title="${esc(p.e.src+' · '+p.e.d)}" style="color:var(--ok)">✓</span><div class="sm" style="text-align:right">${p.isDiff?'diferencial':esc(p.e.d)}${chg?' · datos: '+fmt(p.raw):''}</div>${p.e.warn?'<div class="sm" style="color:var(--warn);text-align:right;max-width:150px">'+esc(p.e.warn)+'</div>':''}`; })()}</div></div>`).join('')+`<div class="total"><span>Total peajes</span><span>${fmt(s.tollCost)}</span></div><p class="foot">✓ = tarifa Cat. I verificada en ANI o prensa (fecha al lado). <span style="color:var(--warn)">estimado</span> = peaje sin tarifa confirmada, calculado a $17.500. “sin verificar” = valor del tablero de Supertransporte. ${isCatI()?'':'<b>Las tarifas verificadas solo aplican a Cat. I.</b>'}</p>`;
   $('tl').innerHTML=tl;
+  $('tollBadge').hidden=!s.hits.length; $('tollBadge').textContent=s.hits.length; $('norutes').hidden=true;
   $('tl').querySelectorAll('.ti').forEach(e=>e.onclick=()=>{ const x=s.hits[+e.dataset.k]; map.setView([x.t.lat,x.t.lon],17); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); });
 }
+
+// ---------- Pestañas ----------
+let TAB='rutas'; try{ TAB=localStorage.getItem('peajes_tab')||'rutas'; }catch(e){}
+function showTab(t,scroll){
+  TAB=t; try{ localStorage.setItem('peajes_tab',t); }catch(e){}
+  document.querySelectorAll('#tabs [data-tab]').forEach(b=>{ const on=b.dataset.tab===t; b.classList.toggle('on',on); b.setAttribute('aria-selected',on); });
+  document.querySelectorAll('.tabpane').forEach(p=>p.hidden=p.dataset.pane!==t);
+  if(scroll && innerWidth>=860) $('tabs').scrollIntoView({block:'start'});
+}
+document.querySelectorAll('#tabs [data-tab]').forEach(b=>b.onclick=()=>showTab(b.dataset.tab,true));
+showTab(TAB);
 
 // ---------- Init ----------
 setupAC($('orig'),$('sorig'),'A'); setupAC($('via'),$('svia'),'V'); $('viaclr').onclick=()=>{ V=EXTRA.shift()||null; $('via').value=V?V.label:''; drawStopList(); drawPins(); if(A&&B) $('go').click(); }; setupAC($('dest'),$('sdest'),'B');

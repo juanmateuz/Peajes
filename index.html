@@ -41,47 +41,77 @@
   <p class="foot" style="margin:6px 2px 0">Tip: <b>mantén presionado</b> el mapa para elegir salida, parada o destino, y <b>arrastra</b> los puntos para ajustarlos.</p>
   <button class="go" id="go" style="margin-top:12px">Calcular ruta</button>
   <div id="helpbox"></div>
+  <div class="status" id="st">Cargando peajes…</div>
 
   <div id="tripsWrap" hidden><div class="lbl" style="display:flex;justify-content:space-between">Tus rutas <a href="#" id="tripEdit" style="color:var(--acc);text-transform:none;letter-spacing:0;font-weight:500;text-decoration:none">Editar</a></div>
   <div class="vehs" id="trips"></div></div>
-  <div class="lbl">Prioridad</div>
-  <div class="chips" id="prio">
-    <button class="chip on" data-p="fast" type="button">⚡ Más rápida</button>
-    <button class="chip" data-p="short" type="button">📏 Más corta</button>
-    <button class="chip" data-p="cheap" type="button">💰 Más barata</button>
-  </div>
-  <div class="lbl">Viaje</div>
-  <div class="seg" id="trip"><button data-t="1" class="on" type="button">Solo ida</button><button data-t="2" type="button">Ida y vuelta</button></div>
-  <div class="lbl" style="display:flex;justify-content:space-between">Mis vehículos <a href="#" id="vedit" style="color:var(--acc);text-transform:none;letter-spacing:0;font-weight:500;text-decoration:none">Editar</a></div>
-  <div class="vehs" id="vehs"></div>
-  <div class="lbl">Categoría de peaje</div>
-  <select id="cat"><option value="">Cargando peajes…</option></select>
-  <p class="foot" style="margin-top:6px">La mayoría de carros particulares son <b>Cat. I</b>. La clasificación exacta (ejes, llantas) puede variar según el peaje. Las motos no pagan en la mayoría de peajes nacionales.</p>
 
-  <details class="opts">
-    <summary>Combustible y opciones</summary>
-    <div class="grid2" style="margin-top:12px">
+  <!-- ===== Pestañas ===== -->
+  <nav class="tabs" id="tabs" role="tablist">
+    <button role="tab" data-tab="rutas" class="on" type="button">Rutas</button>
+    <button role="tab" data-tab="peajes" type="button">Peajes <span class="badge" id="tollBadge" hidden></span></button>
+    <button role="tab" data-tab="vehiculo" type="button">Vehículo</button>
+    <button role="tab" data-tab="ajustes" type="button">Ajustes</button>
+    <button role="tab" data-tab="info" type="button">Info</button>
+  </nav>
+
+  <!-- Rutas: elegir, comparar, iniciar -->
+  <section class="tabpane" data-pane="rutas">
+    <div class="lbl">Prioridad</div>
+    <div class="chips" id="prio">
+      <button class="chip on" data-p="fast" type="button">⚡ Más rápida</button>
+      <button class="chip" data-p="short" type="button">📏 Más corta</button>
+      <button class="chip" data-p="cheap" type="button">💰 Más barata</button>
+    </div>
+    <div class="lbl">Viaje</div>
+    <div class="seg" id="trip"><button data-t="1" class="on" type="button">Solo ida</button><button data-t="2" type="button">Ida y vuelta</button></div>
+    <div id="startwrap"></div>
+    <div id="summary"></div>
+    <div class="routes" id="routes"></div>
+    <div class="legend" id="rtlegend"></div>
+    <p class="foot" id="norutes">Escribe salida y destino y toca <b>Calcular ruta</b>.</p>
+  </section>
+
+  <!-- Peajes de la ruta seleccionada -->
+  <section class="tabpane" data-pane="peajes" hidden>
+    <div class="tl" id="tl"><p class="foot">Calcula una ruta para ver sus peajes.</p></div>
+  </section>
+
+  <!-- Vehículo: categoría y consumo -->
+  <section class="tabpane" data-pane="vehiculo" hidden>
+    <div class="lbl" style="display:flex;justify-content:space-between">Mis vehículos <a href="#" id="vedit" style="color:var(--acc);text-transform:none;letter-spacing:0;font-weight:500;text-decoration:none">Editar</a></div>
+    <div class="vehs" id="vehs"></div>
+    <div class="lbl">Categoría de peaje</div>
+    <select id="cat"><option value="">Cargando peajes…</option></select>
+    <p class="foot" style="margin-top:6px">La mayoría de carros particulares son <b>Cat. I</b>. La clasificación exacta (ejes, llantas) puede variar según el peaje. Las motos no pagan en la mayoría de peajes nacionales.</p>
+    <div class="lbl">Combustible</div>
+    <div class="grid2">
       <div><label>Precio galón (COP)</label><input class="in" id="gal" type="number" inputmode="numeric" placeholder="tu precio"></div>
       <div><label>Rendimiento (km/gal)</label><input class="in" id="kmg" type="number" inputmode="numeric" placeholder="ej. 40"></div>
     </div>
+    <p class="foot">Al elegir un vehículo guardado estos campos se llenan solos. Puedes ajustarlos para un viaje puntual.</p>
+  </section>
+
+  <!-- Ajustes de cálculo -->
+  <section class="tabpane" data-pane="ajustes" hidden>
+    <div class="lbl">Navegación</div>
     <label class="check"><input type="checkbox" id="autorr" checked><span><b>Recalcular</b> automáticamente si me salgo de la ruta (requiere GPS)</span></label>
+    <div class="lbl">Rutas</div>
     <label class="check"><input type="checkbox" id="explore" checked><span>Buscar <b>más rutas</b> automáticamente por otros corredores (tarda unos segundos más)</span></label>
     <label class="check"><input type="checkbox" id="avoid"><span>Probar también una ruta evitando peajes (según OpenStreetMap, puede ser incompleto)</span></label>
-    <div style="margin-top:10px"><label style="font-size:12px;color:var(--mute)">Peajes sin tarifa confirmada (Cat. I)</label><select id="unv"><option value="est">Usar $17.500 (estimado)</option><option value="data">Usar dato de Supertransporte</option></select></div>
+    <div class="lbl">Tarifas</div>
+    <label style="font-size:12px;color:var(--mute);display:block;margin-bottom:4px">Peajes sin tarifa confirmada (Cat. I)</label>
+    <select id="unv"><option value="est">Usar $17.500 (estimado)</option><option value="data">Usar dato de Supertransporte</option></select>
     <label class="check"><input type="checkbox" id="diff"><span>Tengo <b>tarifa diferencial</b> de Autopistas del Café (residente de Manizales, Chinchiná, Villamaría, Palestina, Santa Rosa o Circasia): Tarapacá I, II y Circasia a $700. Debes estar inscrito con el concesionario.</span></label>
-    <div style="margin-top:10px"><label style="font-size:12px;color:var(--mute)">Distancia máxima peaje–ruta (m)</label><input class="in" id="tol" type="number" value="120"></div>
-  </details>
+    <div class="lbl">Detección de peajes</div>
+    <label style="font-size:12px;color:var(--mute);display:block;margin-bottom:4px">Distancia máxima peaje–ruta (m)</label>
+    <input class="in" id="tol" type="number" value="120">
+  </section>
 
-  <div class="status" id="st">Cargando peajes…</div>
-  <div class="routes" id="routes"></div>
-  <div class="legend" id="rtlegend"></div>
-  <div id="summary"></div>
-  <div id="startwrap"></div>
-  <div class="tl" id="tl"></div>
-
-  <details class="opts tips">
-    <summary>Consejos antes de viajar</summary>
-    <ul>
+  <!-- Información: consejos, datos y fuentes -->
+  <section class="tabpane" data-pane="info" hidden>
+    <div class="lbl">Consejos antes de viajar</div>
+    <ul class="tipsl">
       <li>El total es un <b>estimado</b>: confirma la tarifa vigente con el concesionario, la ANI o el INVÍAS.</li>
       <li>Algunos peajes cobran en <b>un solo sentido</b>. Si uno aparece “a X m”, revisa si queda sobre tu vía.</li>
       <li>Si tienes <b>tarifa diferencial</b>, pagas menos; se tramita con el concesionario.</li>
@@ -90,17 +120,15 @@
       <li>Este mapa no muestra tráfico ni cierres: revisa el estado de las vías antes de salir.</li>
       <li>Lleva efectivo; no todas las casetas aceptan tarjeta.</li>
     </ul>
-  </details>
-  <details class="opts">
-    <summary>Datos y fuente</summary>
+    <div class="lbl">Datos y fuente</div>
     <div id="meta" class="foot">—</div>
     <p style="display:flex;gap:6px;flex-wrap:wrap"><button class="chip" id="opentbl">📋 Ver todos los datos del tablero</button><button class="chip" id="copyall">Copiar datos para Claude</button></p>
     <details style="margin:8px 0"><summary style="font-size:12px">Ver tarifas verificadas (Cat. I)</summary><div id="verifl" class="foot"></div></details>
     <p class="foot">Si la descarga automática falla, carga un GeoJSON o CSV de peajes con latitud/longitud:</p>
     <input type="file" id="file" accept=".geojson,.json,.csv" style="font-size:12px">
     <p><button class="chip" id="reload">Volver a descargar</button></p>
-  </details>
-  <p class="foot">Rutas: OSRM · Tipo de vía: Valhalla · Mapa: © Esri / OpenStreetMap · Giro del mapa: leaflet-rotate (GPL-3.0, cargado desde unpkg) · Peajes: Supertransporte.</p>
+    <p class="foot">Rutas: OSRM · Tipo de vía: Valhalla · Búsqueda: Photon · Mapa: © Esri / OpenStreetMap · Giro del mapa: leaflet-rotate (GPL-3.0, cargado desde unpkg) · Peajes: Supertransporte.</p>
+  </section>
 </aside>
 <div id="toast" hidden></div>
 <div id="vmodal" hidden><div class="box">

@@ -127,6 +127,16 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
 .rtype{margin-top:8px;display:flex;height:6px;border-radius:4px;overflow:hidden;background:#eee}
 #toast{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:4000;background:#111318;color:#fff;padding:10px 16px;border-radius:12px;font-size:13.5px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);transition:opacity .3s;max-width:90vw}
 #toast[hidden]{display:none}
+/* Pestañas */
+.tabs{position:sticky;top:0;z-index:20;display:flex;gap:2px;margin:16px -20px 0;padding:8px 14px 0;background:var(--card);border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{flex:1 0 auto;border:0;background:none;font:inherit;font-size:13.5px;font-weight:600;color:var(--mute);padding:10px 10px 11px;border-bottom:2.5px solid transparent;cursor:pointer;white-space:nowrap}
+.tabs button.on{color:var(--ink);border-bottom-color:var(--ink)}
+.tabs .badge{display:inline-block;min-width:18px;padding:1px 5px;border-radius:9px;background:var(--toll);color:#fff;font-size:10.5px;margin-left:3px;vertical-align:1px}
+.tabpane{padding-top:4px}
+.tabpane[hidden]{display:none}
+.tipsl{margin:6px 0 0;padding-left:18px;color:var(--ink2);line-height:1.55;font-size:13px}
+@media(max-width:860px){ .tabs{margin:16px -20px 0} }
 /* Modo viaje */
 #navbar{position:absolute;left:10px;right:10px;top:10px;z-index:900;background:#111318;color:#fff;border-radius:16px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.3);display:flex;gap:10px;align-items:center}
 #navbar[hidden]{display:none}

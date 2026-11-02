@@ -51,9 +51,9 @@ ok('Autocompletado usa Photon', photonCalls>0 && !(await p.isHidden('#sorig')));
 await p.click('#sorig div');
 await p.fill('#dest','Medellín');
 // --- vehículo + ida y vuelta
-await p.click('#vadd');await p.fill('#vname','Mi Mazda');await p.fill('#vkmg','40');await p.fill('#vgal','16000');await p.click('#vsave');
+await E(()=>showTab('vehiculo'));await p.click('#vadd');await p.fill('#vname','Mi Mazda');await p.fill('#vkmg','40');await p.fill('#vgal','16000');await p.click('#vsave');
 ok('Vehículo guardado en localStorage', await E(()=>JSON.parse(localStorage.getItem('peajes_vehs')).length===1));
-await p.click('#trip [data-t="2"]');
+await E(()=>showTab('rutas'));await p.click('#trip [data-t="2"]');
 await E(()=>{document.getElementById('explore').checked=true});
 await p.click('#go');await p.waitForTimeout(500);
 ok('Rutas calculadas', await E(()=>ROUTES.length)>=2);
@@ -71,9 +71,9 @@ ok('Etiquetas externas escapadas (sin XSS)', await E(()=>!window.__xss) && (awai
 await p.click('[data-p=short]');ok('Prioridad corta elige menos km', await E(()=>ROUTES[SEL].distance===Math.min(...ROUTES.map(r=>r.distance))));
 await p.click('[data-p=fast]');
 // --- diferencial
-await E(()=>{document.querySelectorAll('details.opts')[0].open=true});
+await E(()=>{showTab('ajustes')});
 await p.check('#diff');ok('Tarifa diferencial aplica $700 a Tarapacá', await E(()=>priceOf(TOLLS.find(t=>t.name==='Tarapacá II'),'cat_1').v===700));
-await p.uncheck('#diff');
+await p.uncheck('#diff'); await E(()=>showTab('rutas'));
 // --- tipos de vía
 await p.waitForTimeout(800);
 ok('Tipo de vía pintado (leyenda)', (await p.textContent('#rtlegend')).includes('Destapada'));
@@ -115,10 +115,10 @@ ok('Apagar En vivo detiene GPS y rumbo', await E(()=>!LIVE && watchId===null && 
 await p.click('#fabBig');await p.waitForTimeout(400);
 ok('Mapa grande', await E(()=>document.body.classList.contains('bigmap')));
 // --- tabla de datos
-await E(()=>{document.querySelectorAll('details.opts')[2].open=true});
+await E(()=>{showTab('info')});
 await p.click('#opentbl'); ok('Tabla de datos', (await p.textContent('#dinfo')).includes('3 de 3'));
 ok('CSV para copiar', await E(()=>tableCSV(TOLLS).split('\n').length===4));
-await p.click('#dclose');
+await p.click('#dclose'); await E(()=>showTab('rutas'));
 // --- menú mantener presionado
 await E(()=>pointMenu(L.latLng(5,-75))); await p.waitForTimeout(100);
 ok('Menú de punto en mapa', (await p.textContent('.leaflet-popup-content')).includes('Pasar por aquí'));
@@ -219,6 +219,17 @@ ok('Al llegar al destino termina solo', await E(()=>!NAV) && (await p.textConten
 await E(()=>localStorage.setItem('peajes_trips',JSON.stringify([{id:'1',name:'Perímetro Urbano → Perímetro Urbano',from:{lat:4.6,lon:-74.1,label:'x'},to:{lat:6.25,lon:-75.57,label:'y'},stops:[],geom:[[4.6,-74.1],[6.25,-75.57]],km:415,count:3,last:1}])));
 await p.reload(); await p.waitForTimeout(4500);
 ok('Rutas guardadas con "Perímetro Urbano" se renombran solas', await E(()=>TRIPS[0].name==='Bogotá → Medellín' && TRIPS[0].count===3), await E(()=>TRIPS[0].name));
+// --- pestañas
+await E(()=>{ A={lat:4.6,lon:-74.1,label:'Bogotá'}; B={lat:6.25,lon:-75.57,label:'Medellín'}; document.getElementById('orig').value='Bogotá'; document.getElementById('dest').value='Medellín'; });
+await p.click('#go'); await p.waitForTimeout(1500);
+ok('Pestañas: 5 secciones y solo una visible', await E(()=>document.querySelectorAll('#tabs [data-tab]').length===5 && [...document.querySelectorAll('.tabpane')].filter(p=>!p.hidden).length===1));
+await p.click('#tabs [data-tab="peajes"]'); ok('Pestaña Peajes muestra la lista', await p.isVisible('#tl') && !(await p.isVisible('#routes')));
+ok('Contador de peajes en la pestaña', await E(()=>!document.getElementById('tollBadge').hidden && +document.getElementById('tollBadge').textContent===ROUTES[SEL].hits.length));
+await p.click('#tabs [data-tab="vehiculo"]'); ok('Pestaña Vehículo: vehículos, categoría y combustible', await p.isVisible('#vehs') && await p.isVisible('#cat') && await p.isVisible('#kmg'));
+await p.click('#tabs [data-tab="ajustes"]'); ok('Pestaña Ajustes: todas las opciones', await p.isVisible('#autorr') && await p.isVisible('#explore') && await p.isVisible('#avoid') && await p.isVisible('#unv') && await p.isVisible('#diff') && await p.isVisible('#tol'));
+await p.click('#tabs [data-tab="info"]'); ok('Pestaña Info: consejos, datos y fuentes', await p.isVisible('.tipsl') && await p.isVisible('#opentbl') && await p.isVisible('#file'));
+await p.click('#go'); await p.waitForTimeout(1200); ok('Calcular vuelve a la pestaña Rutas', await E(()=>TAB==='rutas') && await p.isVisible('#routes'));
+ok('La pestaña elegida se recuerda', await E(()=>localStorage.getItem('peajes_tab')==='rutas'));
 ok('Sin errores JS en todo el recorrido', errors.length===0, errors.join(' | '));
 console.log(results.join('\n'));console.log(`\n${results.filter(x=>x.startsWith('PASS')).length}/${results.length} pruebas OK · OSRM:${osrmCalls} Valhalla:${valhallaCalls} Photon:${photonCalls} Nominatim:${nomiCalls}`);
 await b.close();srv.close();})();
