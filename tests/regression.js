@@ -204,7 +204,11 @@ ok('Botón cambia a "Terminar viaje"', (await p.textContent('#startnav')).includ
 await E(()=>{ const c=ROUTES[SEL].coords; const q=c[Math.floor(c.length*0.1)]; ME={lat:q[0],lon:q[1]}; updateCar(q[0],q[1],null,15); paintNav(); });
 const nb=await p.textContent('#navbar');
 ok('Barra muestra km restantes, llegada y próximo peaje', /km ·/.test(nb) && nb.includes('Llegada') && /Próximo peaje: .+ en [\d.]+ km/.test(nb), nb.replace(/\s+/g,' '));
+ok('Tramo recorrido se pinta claro hasta tu posición', await E(()=>{ const ll=doneLine.getLatLngs(); const last=ll[ll.length-1]; return ll.length>2 && hav([last.lat,last.lng],[ME.lat,ME.lon])<30 && doneLine.options.color==='#a9b3c4'; }));
+await E(()=>{ const c=ROUTES[SEL].coords; const q=c[Math.floor(c.length*0.6)]; ME={lat:q[0],lon:q[1]}; updateCar(q[0],q[1],null,15); paintNav(); });
+ok('El tramo recorrido avanza contigo', await E(()=>{ const ll=doneLine.getLatLngs(); const last=ll[ll.length-1]; return hav([last.lat,last.lng],[ME.lat,ME.lon])<30; }));
 await p.click('#navEnd'); await p.waitForTimeout(500);
+ok('Al terminar se borra el tramo recorrido', await E(()=>doneLine.getLatLngs().length===0));
 ok('Terminar: sale del modo viaje y apaga el GPS que prendió', await E(()=>!NAV && document.getElementById('navbar').hidden && !LIVE && watchId===null && !FOLLOW));
 ok('Botón vuelve a "Iniciar viaje"', (await p.textContent('#startnav')).includes('Iniciar viaje'));
 // llegada automática

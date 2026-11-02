@@ -32,6 +32,9 @@ const tollLayer = L.featureGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
 const rtLayer = L.layerGroup().addTo(map);
 const bubLayer = L.layerGroup().addTo(map);
+// Tramo ya recorrido en modo viaje: gris claro encima de la ruta
+const doneCase=L.polyline([],{color:'#ffffff',weight:10,opacity:.9,lineCap:'round',lineJoin:'round',interactive:false}).addTo(map);
+const doneLine=L.polyline([],{color:'#a9b3c4',weight:7,opacity:1,lineCap:'round',lineJoin:'round',interactive:false}).addTo(map);
 const pinLayer = L.layerGroup().addTo(map);
 
 const CAR_SVG = `<svg class="car" width="46" height="46" viewBox="0 0 46 46" style="position:relative;filter:drop-shadow(0 4px 5px rgba(0,0,0,.35))">
@@ -499,7 +502,19 @@ function navProgress(){ const r=ROUTES[SEL]; if(!r) return null;
   const pos=ME?[ME.lat,ME.lon]:(carMarker?[carMarker.getLatLng().lat,carMarker.getLatLng().lng]:null); if(!pos) return null;
   const done=progressKm(pos,lite(r))/1000, tot=r.distance/1000, left=Math.max(0,tot-done);
   return {r,done,tot,left,secs:r.duration*(tot?left/tot:0)}; }
+// Divide la ruta seleccionada en el punto donde vas: [inicio … posición actual]
+function paintDone(){
+  const r=ROUTES[SEL];
+  if(!NAV||!ME||!r){ doneCase.setLatLngs([]); doneLine.setLatLngs([]); return; }
+  const c=r.coords, p=[ME.lat,ME.lon]; let best=1e12, bi=1, bf=0;
+  for(let i=1;i<c.length;i++){ const [d,f]=segDist(p,c[i-1],c[i]); if(d<best){ best=d; bi=i; bf=f; } }
+  if(best>300){ doneCase.setLatLngs([]); doneLine.setLatLngs([]); return; }      // fuera de la ruta: no pintar
+  const a=c[bi-1], b=c[bi], cut=[a[0]+(b[0]-a[0])*bf, a[1]+(b[1]-a[1])*bf];
+  const done=c.slice(0,bi).concat([cut]);
+  doneCase.setLatLngs(done); doneLine.setLatLngs(done); doneCase.bringToFront(); doneLine.bringToFront();
+}
 function paintNav(){
+  paintDone();
   if(!NAV) return; const p=navProgress(); if(!p){ $('navMain').textContent='Esperando GPS…'; $('navSub').textContent='Activa la ubicación para seguir el viaje'; $('navToll').textContent=''; return; }
   const eta=new Date(Date.now()+p.secs*1000);
   $('navMain').textContent=`${p.left.toFixed(p.left<10?1:0)} km · ${hm(p.secs)}`;
@@ -516,7 +531,7 @@ function startNav(){
   scrollTo({top:0,behavior:'smooth'}); toast('Viaje iniciado');
 }
 function endNav(arrived){
-  if(!NAV) return; NAV=false;
+  if(!NAV) return; NAV=false; paintDone(); syncBubbles();
   const r=ROUTES[SEL]; const p=navProgress();
   $('navbar').hidden=true; document.body.classList.remove('nav','bigmap'); setTimeout(()=>map.invalidateSize(),280);
   setFollow(false);
@@ -557,7 +572,7 @@ function checkOffRoute(lat,lon,acc){
 
 let FOLLOW=false;
 function setFollow(on){ FOLLOW=on; if(!on&&HEADUP){ HEADUP=false; stopBearingAnim(); if(CAN_ROTATE) animateBearing(0); } $('fabLoc').classList.toggle('on',on); syncBubbles(); }
-function syncBubbles(){ const hide=FOLLOW||map.getZoom()>=15; if(hide&&map.hasLayer(bubLayer)) map.removeLayer(bubLayer); if(!hide&&!map.hasLayer(bubLayer)) map.addLayer(bubLayer); }
+function syncBubbles(){ const hide=FOLLOW||NAV||map.getZoom()>=15; if(hide&&map.hasLayer(bubLayer)) map.removeLayer(bubLayer); if(!hide&&!map.hasLayer(bubLayer)) map.addLayer(bubLayer); }
 map.on('zoomend',()=>syncBubbles());
 function centerCar(){
   if(!carMarker){ if(LIVE) locate(false); else toast('Activa “En vivo” para ver tu ubicación'); return; }
@@ -671,7 +686,8 @@ async function paintRoadTypes(idx){
   try{ await roadTypes(r); }catch(e){ console.warn('Valhalla',e); $('rtlegend').innerHTML='<span class="foot">No pude obtener el tipo de vía en este momento.</span>'; return; }
   if(ROUTES[SEL]!==r) return;
   rtLayer.clearLayers();
-  r._rt.segs.forEach(sg=>{ L.polyline(sg.c,{color:RT[sg.t].c,weight:6,lineCap:'round',lineJoin:'round',dashArray:sg.t==='destapada'?'8 8':null}).addTo(rtLayer); });
+  r._rt.segs.forEach(sg=>{ L.polyline(sg.c,{color:RT[sg.t].c,weight:6,lineCap:'round',lineJoin:'round',dashArray:sg.t==='destapada'?'8 8':null,interactive:false}).addTo(rtLayer); });
+  if(NAV) paintDone();
   const km=r._rt.km;
   $('rtlegend').innerHTML=Object.keys(RT).filter(k=>km[k]>0.05).map(k=>`<span><i style="background:${RT[k].c}"></i>${RT[k].n} · ${km[k].toFixed(0)} km</span>`).join('');
   const card=document.querySelector(`.rc[data-i="${idx}"] .rtslot`); if(card) card.innerHTML=rtBar(r);
@@ -838,6 +854,7 @@ function renderResults(sel,fit){
   const main=L.polyline(s.coords,{color:'#2f6bff',weight:7,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
   s.hits.forEach((h,k)=>L.marker([h.t.lat,h.t.lon],{icon:tollPin(k+1,!!(isCatI()&&verifOf(h.t))),zIndexOffset:500}).bindPopup(popup(h.t)).addTo(routeLayer));
   carAtRouteStart(s);
+  if(NAV) setTimeout(paintDone,0);
   // burbujas para elegir en el mapa
   ROUTES.forEach((r,i)=>{ const lp=r._lp||(r._lp=labelPoint(r));
     const cost=r.fuel!=null?r.total:r.tollCost;
