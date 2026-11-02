@@ -789,6 +789,8 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
 .legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11.5px;color:var(--ink2);margin-top:10px}
 .legend i{display:inline-block;width:18px;height:5px;border-radius:3px;vertical-align:middle;margin-right:5px}
 .rtype{margin-top:8px;display:flex;height:6px;border-radius:4px;overflow:hidden;background:#eee}
+#toast{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:4000;background:#111318;color:#fff;padding:10px 16px;border-radius:12px;font-size:13.5px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);transition:opacity .3s;max-width:90vw}
+#toast[hidden]{display:none}
 /* Tabla de datos */
 #dmodal{position:fixed;inset:0;z-index:3000;background:rgba(17,19,24,.45);display:flex;align-items:flex-end;justify-content:center}
 #dmodal[hidden]{display:none}
@@ -879,6 +881,7 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
       <div><label>Precio galón (COP)</label><input class="in" id="gal" type="number" inputmode="numeric" placeholder="tu precio"></div>
       <div><label>Rendimiento (km/gal)</label><input class="in" id="kmg" type="number" inputmode="numeric" placeholder="ej. 40"></div>
     </div>
+    <label class="check"><input type="checkbox" id="autorr" checked><span><b>Recalcular</b> automáticamente si me salgo de la ruta (requiere GPS)</span></label>
     <label class="check"><input type="checkbox" id="explore" checked><span>Buscar <b>más rutas</b> automáticamente por otros corredores (tarda unos segundos más)</span></label>
     <label class="check"><input type="checkbox" id="avoid"><span>Probar también una ruta evitando peajes (según OpenStreetMap, puede ser incompleto)</span></label>
     <div style="margin-top:10px"><label style="font-size:12px;color:var(--mute)">Peajes sin tarifa confirmada (Cat. I)</label><select id="unv"><option value="est">Usar $17.500 (estimado)</option><option value="data">Usar dato de Supertransporte</option></select></div>
@@ -916,6 +919,7 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
   </details>
   <p class="foot">Rutas: OSRM · Mapa: © Esri / OpenStreetMap · Peajes: Supertransporte.</p>
 </aside>
+<div id="toast" hidden></div>
 <div id="vmodal" hidden><div class="box">
   <h3 id="vtitle">Nuevo vehículo</h3>
   <label>Nombre</label><input class="in" id="vname" placeholder="Ej: Mi Mazda 3">
@@ -1237,7 +1241,7 @@ function locate(asOrigin=true){
 }
 function startWatch(){ if(watchId!=null) return;
   watchId=navigator.geolocation.watchPosition(p=>{ ME={lat:p.coords.latitude,lon:p.coords.longitude}; updateCar(ME.lat,ME.lon,p.coords.heading);
-    if(A&&A.isMe){ A.lat=ME.lat; A.lon=ME.lon; } if(FOLLOW) map.panTo([ME.lat,ME.lon],{animate:true}); },()=>{}, {enableHighAccuracy:true,maximumAge:5000}); }
+    if(A&&A.isMe){ A.lat=ME.lat; A.lon=ME.lon; } if(FOLLOW) map.panTo([ME.lat,ME.lon],{animate:true}); checkOffRoute(ME.lat,ME.lon,p.coords.accuracy||50); },()=>{}, {enableHighAccuracy:true,maximumAge:5000}); }
 let PRIO='fast';
 try{ const sp=localStorage.getItem('peajes_prio'); if(sp) PRIO=sp; }catch(e){}
 function paintPrio(){ document.querySelectorAll('#prio .chip').forEach(c=>c.classList.toggle('on',c.dataset.p===PRIO)); }
@@ -1285,6 +1289,28 @@ $('vedit').onclick=e=>{ e.preventDefault(); if(VSEL) openVeh(VSEL); else if(VEHS
 function paintTrip(){ document.querySelectorAll('#trip button').forEach(b=>b.classList.toggle('on',+b.dataset.t===TRIP)); }
 document.querySelectorAll('#trip button').forEach(b=>b.onclick=()=>{ TRIP=+b.dataset.t; paintTrip(); try{localStorage.setItem('peajes_trip',TRIP);}catch(e){} if(ROUTES.length) renderResults(); });
 paintTrip(); drawVehs();
+
+// ---------- Fuera de ruta → recalcular ----------
+let OFF=0, LAST_RR=0, REROUTING=false;
+function toast(msg,ms=3500){ const t=$('toast'); t.textContent=msg; t.hidden=false; clearTimeout(t._tm); t._tm=setTimeout(()=>t.hidden=true,ms); }
+function distToRoute(p,c){ let best=1e12; const step=c.length>4000?2:1; for(let i=step;i<c.length;i+=step){ const d=segDist(p,c[i-step],c[i])[0]; if(d<best) best=d; } return best; }
+function progressKm(p,c){ const cum=cumDist(c); let best=1e12, at=0; for(let i=1;i<c.length;i++){ const [d,f]=segDist(p,c[i-1],c[i]); if(d<best){best=d; at=cum[i-1]+f*(cum[i]-cum[i-1]);} } return at; }
+function checkOffRoute(lat,lon,acc){
+  if(!$('autorr').checked || !ROUTES.length || !B || REROUTING) return;
+  const r=ROUTES[SEL]; if(!r) return;
+  if(acc>120) return;                                   // GPS poco preciso: no decidir
+  if(hav([lat,lon],[B.lat,B.lon])<300) return;          // ya llegaste
+  const d=distToRoute([lat,lon],r.coords), lim=Math.max(120,acc*1.5);
+  if(d<=lim){ OFF=0; return; }
+  OFF++;
+  if(OFF<3 || Date.now()-LAST_RR<30000) return;         // 3 lecturas seguidas y máx. 1 recálculo cada 30 s
+  OFF=0; LAST_RR=Date.now(); REROUTING=true;
+  toast('Te saliste de la ruta. Recalculando…');
+  // si ya pasaste la parada, quitarla
+  if(V){ const pv=progressKm([V.lat,V.lon],r.coords), pm=progressKm([lat,lon],r.coords); if(pm>pv || hav([lat,lon],[V.lat,V.lon])<500){ V=null; $('via').value=''; } }
+  A={lat,lon,label:'Mi ubicación',isMe:true}; $('orig').value='Mi ubicación';
+  calc({reroute:true});
+}
 
 let FOLLOW=false;
 function setFollow(on){ FOLLOW=on; $('fabLoc').classList.toggle('on',on); syncBubbles(); }
@@ -1428,8 +1454,8 @@ async function nameRoute(r){
 
 // ---------- Rutas ----------
 async function osrm(a,b,extra='',via=null){ const pts=[a,via,b].filter(Boolean).map(p=>`${p.lon},${p.lat}`).join(';'); const d=await (await fetch(`${OSRM}/route/v1/driving/${pts}?overview=full&geometries=geojson&alternatives=${via?'false':'3'}${extra}`)).json(); if(d.code!=='Ok') throw new Error(d.message||d.code); return d.routes; }
-$('go').onclick=async()=>{
-  $('sorig').hidden=true; $('sdest').hidden=true; $('svia').hidden=true; $('go').textContent='Calculando…';
+async function calc(opt={}){
+  const RR=!!opt.reroute; $('sorig').hidden=true; $('sdest').hidden=true; $('svia').hidden=true; $('go').textContent='Calculando…';
   try{
     if(!$('orig').value.trim()) A=null; if(!$('dest').value.trim()) B=null; if(!$('via').value.trim()) V=null;
     if(!A&&$('orig').value.trim()) A=await geocode($('orig').value.trim());
@@ -1447,8 +1473,9 @@ $('go').onclick=async()=>{
     if($('avoid').checked){ try{ const nr=await osrm(A,B,'&exclude=toll'); if(nr[0]) routes.push({...nr[0],label:'Evitando peajes'}); }catch(e){} }
     ROUTES=[]; for(const r of routes){ if(!ROUTES.some(x=>Math.abs(x.distance-r.distance)<500&&Math.abs(x.duration-r.duration)<120)) ROUTES.push(r); }
     ROUTES.forEach(r=>r.coords=r.geometry.coordinates.map(c=>[c[1],c[0]]));
-    renderResults(ROUTES[0]&&ROUTES[0].forced?0:pickByPrio(),true);
-    if($('explore').checked && !V){
+    renderResults(ROUTES[0]&&ROUTES[0].forced?0:pickByPrio(),RR&&FOLLOW?false:true);
+    if(RR){ toast('Ruta recalculada desde tu ubicación'); if(FOLLOW&&ME) map.panTo([ME.lat,ME.lon]); }
+    if($('explore').checked && !V && !RR){
       const token=Symbol(); window._exTok=token;
       st('Buscando más rutas por otros corredores…');
       const extra=await exploreRoutes(ROUTES.filter(r=>!r.forced));
@@ -1460,8 +1487,9 @@ $('go').onclick=async()=>{
       } else st('No encontré otras rutas razonables además de las mostradas.');
     }
   }catch(e){ st('No pude calcular la ruta: '+esc(e.message),'err'); }
-  finally{ $('go').textContent='Calcular ruta'; }
-};
+  finally{ $('go').textContent='Calcular ruta'; REROUTING=false; }
+}
+$('go').onclick=()=>calc();
 $('cat').onchange=()=>{ try{localStorage.setItem('peajes_cat',$('cat').value);}catch(e){} if(ROUTES.length) renderResults(); };
 try{ const u=localStorage.getItem('peajes_unv'); if(u) $('unv').value=u; }catch(e){}
 $('unv').onchange=()=>{ try{localStorage.setItem('peajes_unv',$('unv').value);}catch(e){} if(ROUTES.length) renderResults(); };
