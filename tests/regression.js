@@ -164,7 +164,9 @@ await E(()=>pointMenu(L.latLng(5.9,-75.2))); await p.waitForTimeout(150); await 
 ok('Límite de 4 paradas', await E(()=>1+EXTRA.length===4));
 await E(()=>{ EXTRA=[]; drawStopList(); V=null; document.getElementById('via').value=''; drawPins(); });
 // toque imperfecto con el dedo
-await E(()=>{ map.closePopup(); setFollow(false); renderResults(0,true); scrollTo(0,0); map.setBearing(15); }); await p.waitForTimeout(400);
+await E(()=>{ map.closePopup(); setFollow(false); V=null; EXTRA=[]; document.getElementById('via').value=''; document.getElementById('explore').checked=false; A={lat:4.6,lon:-74.1,label:'a'}; B={lat:6.25,lon:-75.57,label:'b'}; document.getElementById('orig').value='a'; document.getElementById('dest').value='b'; });
+await p.click('#go'); await p.waitForTimeout(1500);
+await E(()=>{ renderResults(0,true); scrollTo(0,0); map.setBearing(15); }); await p.waitForTimeout(500);
 const tq=await E(()=>{ const c=ROUTES[1].coords; const q=c[Math.floor(c.length*0.5)]; const pp=map.latLngToContainerPoint(q); const r=map.getContainer().getBoundingClientRect(); return {x:r.left+pp.x+20,y:r.top+pp.y}; });
 await p.mouse.move(tq.x,tq.y); await p.mouse.down(); await p.mouse.move(tq.x+6,tq.y+5,{steps:3}); await p.mouse.up(); await p.waitForTimeout(400);
 ok('Toque imperfecto (se mueve 8 px, a 20 px de la línea) selecciona la ruta', await E(()=>SEL===1));
