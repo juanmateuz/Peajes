@@ -786,6 +786,9 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
 #vmodal .box{background:#fff;width:min(460px,100%);border-radius:18px 18px 0 0;padding:20px}
 #vmodal h3{margin:0 0 12px;font-size:16px}
 #vmodal label{display:block;font-size:12px;color:var(--mute);margin:10px 0 4px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11.5px;color:var(--ink2);margin-top:10px}
+.legend i{display:inline-block;width:18px;height:5px;border-radius:3px;vertical-align:middle;margin-right:5px}
+.rtype{margin-top:8px;display:flex;height:6px;border-radius:4px;overflow:hidden;background:#eee}
 /* Tabla de datos */
 #dmodal{position:fixed;inset:0;z-index:3000;background:rgba(17,19,24,.45);display:flex;align-items:flex-end;justify-content:center}
 #dmodal[hidden]{display:none}
@@ -853,6 +856,7 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
   </div>
 
   <p class="foot" style="margin:6px 2px 0">Tip: <b>mantén presionado</b> el mapa para elegir salida, parada o destino.</p>
+  <button class="go" id="go" style="margin-top:12px">Calcular ruta</button>
   <div id="helpbox"></div>
 
   <div class="lbl">Prioridad</div>
@@ -882,9 +886,9 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
     <div style="margin-top:10px"><label style="font-size:12px;color:var(--mute)">Distancia máxima peaje–ruta (m)</label><input class="in" id="tol" type="number" value="120"></div>
   </details>
 
-  <button class="go" id="go">Calcular ruta</button>
   <div class="status" id="st">Cargando peajes…</div>
   <div class="routes" id="routes"></div>
+  <div class="legend" id="rtlegend"></div>
   <div id="summary"></div>
   <div id="startwrap"></div>
   <div class="tl" id="tl"></div>
@@ -964,6 +968,7 @@ const base=L.tileLayer(ESRI+'World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZo
 let tileErr=0; base.on('tileerror',()=>{ if(++tileErr===8){ map.removeLayer(base); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map); } });
 const tollLayer = L.featureGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
+const rtLayer = L.layerGroup().addTo(map);
 const pinLayer = L.layerGroup().addTo(map);
 
 const CAR_SVG = `<svg class="car" width="40" height="40" viewBox="0 0 40 40" style="position:relative;filter:drop-shadow(0 3px 4px rgba(0,0,0,.35))">
@@ -1312,6 +1317,50 @@ function tollsOnRoute(coords,tol){
   const out=[]; for(const h of hits){ const pv=out[out.length-1]; if(pv&&pv.t.name===h.t.name&&pv.t!==h.t&&Math.abs(pv.km-h.km)<1.5){pv.dup=(pv.dup||1)+1;continue;} out.push(h); }
   return out;
 }
+// ---------- Tipo de vía (Valhalla) ----------
+const VALHALLA='https://valhalla1.openstreetmap.de';
+const RT={ troncal:{c:'#2f6bff',n:'Troncal / autopista'}, principal:{c:'#12a150',n:'Vía principal'}, secundaria:{c:'#f59e0b',n:'Secundaria'}, calle:{c:'#7c8799',n:'Calle / local'}, destapada:{c:'#8b4513',n:'Destapada'} };
+function encPoly(c,prec=6){ const f=Math.pow(10,prec); let out='',pl=0,pn=0; const enc=v=>{ v=v<0?~(v<<1):(v<<1); let s=''; while(v>=0x20){ s+=String.fromCharCode((0x20|(v&0x1f))+63); v>>=5; } return s+String.fromCharCode(v+63); };
+  for(const p of c){ const la=Math.round(p[0]*f), lo=Math.round(p[1]*f); out+=enc(la-pl)+enc(lo-pn); pl=la; pn=lo; } return out; }
+function decPoly(str,prec=6){ const f=Math.pow(10,prec); let i=0,la=0,lo=0; const out=[];
+  while(i<str.length){ for(const k of [0,1]){ let b,sh=0,r=0; do{ b=str.charCodeAt(i++)-63; r|=(b&0x1f)<<sh; sh+=5; }while(b>=0x20); const d=(r&1)?~(r>>1):(r>>1); if(k===0) la+=d; else lo+=d; } out.push([la/f,lo/f]); } return out; }
+function classify(e){
+  const surf=e.surface||''; if(e.unpaved||/dirt|gravel|compacted|path|impassable/.test(surf)) return 'destapada';
+  const rc=e.road_class||''; if(/motorway|trunk/.test(rc)) return 'troncal'; if(/primary/.test(rc)) return 'principal';
+  if(/secondary|tertiary/.test(rc)) return 'secundaria'; return 'calle'; }
+function thin(c,minD){ const out=[c[0]]; for(let i=1;i<c.length-1;i++){ if(hav(out[out.length-1],c[i])>=minD) out.push(c[i]); } out.push(c[c.length-1]); return out; }
+async function roadTypes(r){
+  if(r._rt) return r._rt;
+  const pts=thin(r.coords,40); const chunks=[]; let cur=[pts[0]], dist=0;
+  for(let i=1;i<pts.length;i++){ cur.push(pts[i]); dist+=hav(pts[i-1],pts[i]); if(dist>90000){ chunks.push(cur); cur=[pts[i]]; dist=0; } }
+  if(cur.length>1) chunks.push(cur);
+  const segs=[], km={};
+  for(const ch of chunks){
+    const body={encoded_polyline:encPoly(ch),costing:'auto',shape_match:'map_snap',
+      filters:{attributes:['edge.road_class','edge.surface','edge.unpaved','edge.length','edge.begin_shape_index','edge.end_shape_index','shape'],action:'include'}};
+    const res=await fetch(VALHALLA+'/trace_attributes',{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(body)});
+    const d=await res.json(); if(!d.edges) throw new Error(d.error||'sin datos de vía');
+    const shp=decPoly(d.shape||'');
+    for(const e of d.edges){ const t=classify(e); km[t]=(km[t]||0)+(e.length||0);
+      const seg=shp.slice(e.begin_shape_index,e.end_shape_index+1); if(seg.length>1){ const last=segs[segs.length-1]; if(last&&last.t===t) last.c.push(...seg.slice(1)); else segs.push({t,c:seg}); } }
+    await new Promise(z=>setTimeout(z,300));
+  }
+  r._rt={segs,km}; return r._rt;
+}
+function rtBar(r){ if(!r._rt) return ''; const km=r._rt.km, tot=Object.values(km).reduce((a,b)=>a+b,0)||1;
+  return '<div class="rtype">'+Object.keys(RT).filter(k=>km[k]).map(k=>`<span title="${RT[k].n}: ${km[k].toFixed(0)} km" style="width:${km[k]/tot*100}%;background:${RT[k].c}"></span>`).join('')+'</div>'+
+    (km.destapada>0.5?`<div class="warnline" style="color:#8b4513">⚠ ${km.destapada.toFixed(0)} km destapados</div>`:''); }
+async function paintRoadTypes(idx){
+  const r=ROUTES[idx]; if(!r) return;
+  try{ await roadTypes(r); }catch(e){ console.warn('Valhalla',e); $('rtlegend').innerHTML='<span class="foot">No pude obtener el tipo de vía en este momento.</span>'; return; }
+  if(ROUTES[SEL]!==r) return;
+  rtLayer.clearLayers();
+  r._rt.segs.forEach(sg=>{ L.polyline(sg.c,{color:RT[sg.t].c,weight:6,lineCap:'round',lineJoin:'round',dashArray:sg.t==='destapada'?'8 8':null}).addTo(rtLayer); });
+  const km=r._rt.km;
+  $('rtlegend').innerHTML=Object.keys(RT).filter(k=>km[k]>0.05).map(k=>`<span><i style="background:${RT[k].c}"></i>${RT[k].n} · ${km[k].toFixed(0)} km</span>`).join('');
+  const card=document.querySelector(`.rc[data-i="${idx}"] .rtslot`); if(card) card.innerHTML=rtBar(r);
+}
+
 // ---------- Rutas alternativas automáticas ----------
 function destPt(p,brg,d){ const r=Math.PI/180, dr=d/R, b=brg*r, la=p[0]*r, lo=p[1]*r;
   const la2=Math.asin(Math.sin(la)*Math.cos(dr)+Math.cos(la)*Math.sin(dr)*Math.cos(b));
@@ -1410,7 +1459,7 @@ function renderResults(sel,fit){
     r.gals=kmg?r.distance/1000/kmg:null; r.fuel=gal&&kmg?r.gals*gal:null; if(r.tollCost!=null) r.tollCost*=TRIP; if(r.fuel!=null){r.fuel*=TRIP; r.gals*=TRIP;} r.total=(r.tollCost||0)+(r.fuel||0); });
   const fastest=Math.min(...ROUTES.map(r=>r.duration)), cheapest=Math.min(...ROUTES.map(r=>r.total)), shortest=Math.min(...ROUTES.map(r=>r.distance));
 
-  routeLayer.clearLayers();
+  routeLayer.clearLayers(); rtLayer.clearLayers();
   ROUTES.forEach((r,i)=>{ if(i===SEL) return;
     L.polyline(r.coords,{color:'#7c8799',weight:4,opacity:.45,dashArray:'2 7',lineCap:'round'}).addTo(routeLayer);
     L.polyline(r.coords,{color:'#000',weight:22,opacity:0}).on('click',()=>renderResults(i,false)).addTo(routeLayer); });
@@ -1439,11 +1488,13 @@ function renderResults(sel,fit){
       <div class="top"><div><div class="time">${hm(r.duration)}</div><div class="name">${r.label}${tags}</div></div>
       <div class="cost"><b>${fmt(r.fuel!=null?r.total:r.tollCost)}</b><span>${r.fuel!=null?'peajes + combustible':'en peajes'}${TRIP===2?' · ida y vuelta':''}</span></div></div>
       <div class="meta"><span>${(r.distance/1000*TRIP).toFixed(0)} <i>km${TRIP===2?' ida y vuelta':''}</i></span><span>${r.hits.length*TRIP} <i>pasos</i></span><span>${fmt(r.tollCost)} <i>peajes</i></span>${r.fuel!=null?`<span>${fmt(r.fuel)} <i>combustible</i></span>`:''}</div>
+      <div class="rtslot">${rtBar(r)}</div>
       ${r.missing?`<div class="warnline">${r.missing} peaje(s) sin tarifa para esta categoría</div>`:''}</div>`; }).join('');
   const forced=ROUTES.find(r=>r.forced), auto=ROUTES.find(r=>!r.forced);
   if(forced&&auto&&forced.distance>auto.distance*1.25) $('routes').insertAdjacentHTML('afterbegin',`<div class="status err" style="margin:0 0 4px">La parada <b>“${esc($('via').value.split(',')[0])}”</b> agrega ${Math.round((forced.distance-auto.distance)/1000)} km de desvío: probablemente queda detrás de tu salida o fuera del camino. Elige un punto que esté <b>entre</b> la salida y el destino.</div>`);
   $('routes').insertAdjacentHTML('beforeend',`<p class="foot" style="margin:2px 2px 0">Los tiempos son estimados sin tráfico. Si sabes que una vía es más fluida, escríbela en <b>“Pasar por”</b> para forzar la ruta.</p>`);
   $('routes').querySelectorAll('.rc').forEach(c=>c.onclick=()=>{ renderResults(+c.dataset.i,false); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); });
+  if(s._rt){ setTimeout(()=>paintRoadTypes(SEL),0); } else { $('rtlegend').innerHTML='<span class="foot">Cargando tipo de vía…</span>'; paintRoadTypes(SEL); }
   { const v=VEHS.find(x=>x.id===VSEL); const unit=v&&v.fuel==='GNV'?'m³':'gal';
     $('summary').innerHTML=`<div class="sum"><h4><span>Resumen · ${TRIP===2?'ida y vuelta':'solo ida'}</span><span>${esc(v?v.name:'Sin vehículo')}</span></h4>
       <div class="row"><span>Distancia</span><b>${(s.distance/1000*TRIP).toFixed(0)} km</b></div>
