@@ -136,6 +136,15 @@ await p.click('.leaflet-popup-content [data-w="V"]'); await p.waitForTimeout(150
 ok('Pasar por aquí (mapa) usa el punto exacto', await E(()=>V&&V.exact&&Math.abs(V.lat-5.2237)<1e-9) && /-74\.7702,5\.2237/.test(decodeURIComponent(await E(()=>performance.getEntriesByType('resource').map(e=>e.name).filter(n=>n.includes('project-osrm')).join(' ')))));
 ok('La ruta por el punto queda seleccionada', await E(()=>ROUTES[SEL].forced===true && ROUTES[SEL].label==='Por tu punto'));
 ok('Coordenadas escritas se respetan', await E(()=>{ const c=parseCoords('5.2237, -74.7702'); return c&&c.exact&&c.lon===-74.7702; }));
+// arrastrar la parada recalcula por el punto nuevo
+await E(()=>{ const m=pinLayer.getLayers().find(l=>l.dragging&&l.getTooltip()&&/Parada/.test(l.getTooltip().getContent())); m.setLatLng([5.5,-75.0]); m.fire('dragstart'); m.fire('dragend'); });
+await p.waitForTimeout(1500);
+ok('Arrastrar la parada recalcula por el nuevo punto', await E(()=>V.exact&&V.lat===5.5&&document.getElementById('via').value==='5.5000, -75.0000'&&ROUTES[SEL].forced));
+ok('Salida, parada y destino son arrastrables', await E(()=>pinLayer.getLayers().filter(l=>l.options.draggable).length>=2));
+// parada pasada del destino → aviso de ida y vuelta
+await E(()=>{ V={lat:6.745,lon:-76.011,label:'x',picked:true,exact:true}; document.getElementById('via').value='6.7450, -76.0110'; });
+await p.click('#go'); await p.waitForTimeout(1500);
+ok('Aviso cuando la parada hace ir y volver', (await p.textContent('#routes')).includes('vaya y vuelva'));
 ok('Sin errores JS en todo el recorrido', errors.length===0, errors.join(' | '));
 console.log(results.join('\n'));console.log(`\n${results.filter(x=>x.startsWith('PASS')).length}/${results.length} pruebas OK · OSRM:${osrmCalls} Valhalla:${valhallaCalls} Photon:${photonCalls} Nominatim:${nomiCalls}`);
 await b.close();srv.close();})();

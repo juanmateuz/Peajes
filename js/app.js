@@ -57,7 +57,7 @@ const tollPin=(k,verified)=>L.divIcon({className:'',iconSize:[34,44],iconAnchor:
   <span style="position:absolute;top:-6px;right:-8px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:#111318;color:#fff;font:700 10.5px/18px Inter,system-ui;text-align:center;border:2px solid #fff">${k}</span>
   ${verified?'<span style="position:absolute;bottom:6px;right:-6px;width:14px;height:14px;border-radius:50%;background:#0f9d6b;color:#fff;font:700 9px/14px system-ui;text-align:center;border:2px solid #fff">✓</span>':''}
 </div>`});
-const endIcon = b => L.divIcon({className:'',iconSize:[18,18],iconAnchor:[9,9],html:`<div class="endpin ${b?'b':''}"></div>`});
+const endIcon = b => L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,15],html:`<div style="width:30px;height:30px;display:grid;place-items:center"><div class="endpin ${b?'b':''}"></div></div>`});
 
 // Tarifas Cat. I verificadas en prensa/ANI (actualizado 1-nov-2026). Solo se aplican a Categoría I.
 const VERIF=[
@@ -248,10 +248,21 @@ async function geocodeBest(q,a,b){
   return {lat:best.lat,lon:best.lon,label:best.name+(best.detail?', '+best.detail:''),road:best.road,town:best.town,q,detour:bv};
 }
 function setPoint(w,p){ if(w==='A')A=p; else if(w==='V')V=p; else B=p; drawPins(); }
+// Salida, parada y destino se pueden ARRASTRAR; al soltar se recalcula la ruta
+function dragPin(w,icon,latlng,tip){
+  const m=L.marker(latlng,{icon,draggable:true,autoPan:true,zIndexOffset:3000});
+  if(tip) m.bindTooltip(tip,{direction:'top',offset:[0,-10]});
+  m.on('dragstart',()=>{ setFollow(false); map.closePopup(); });
+  m.on('dragend',()=>{ const ll=m.getLatLng(); const p={lat:ll.lat,lon:ll.lng,label:ll.lat.toFixed(4)+', '+ll.lng.toFixed(4),picked:true,exact:true};
+    if(w==='A'){ A=p; $('orig').value=p.label; } else if(w==='V'){ V=p; $('via').value=p.label; } else { B=p; $('dest').value=p.label; }
+    if(A&&B) calc(); });
+  return m.addTo(pinLayer);
+}
+const viaIcon=L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,15],html:'<div style="width:30px;height:30px;display:grid;place-items:center"><div style="width:18px;height:18px;border-radius:50%;background:#fff;border:4px solid #111318;box-shadow:0 2px 8px rgba(0,0,0,.35)"></div></div>'});
 function drawPins(){ pinLayer.clearLayers();
-  if(A && !A.isMe) L.marker([A.lat,A.lon],{icon:endIcon(false)}).addTo(pinLayer);
-  if(V) L.marker([V.lat,V.lon],{icon:L.divIcon({className:'',iconSize:[14,14],iconAnchor:[7,7],html:'<div style="width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #111318;box-shadow:0 2px 6px rgba(0,0,0,.3)"></div>'})}).bindTooltip('Pasar por').addTo(pinLayer);
-  if(B) L.marker([B.lat,B.lon],{icon:endIcon(true)}).addTo(pinLayer); }
+  if(A && !A.isMe) dragPin('A',endIcon(false),[A.lat,A.lon],'Salida · arrástrala');
+  if(V) dragPin('V',viaIcon,[V.lat,V.lon],'Parada · arrástrala para ajustar');
+  if(B) dragPin('B',endIcon(true),[B.lat,B.lon],'Destino · arrástralo'); }
 function pointMenu(latlng){
   const p={lat:latlng.lat,lon:latlng.lng,label:latlng.lat.toFixed(4)+', '+latlng.lng.toFixed(4)};
   const html=`<div style="display:flex;flex-direction:column;gap:6px;min-width:150px">
@@ -667,7 +678,8 @@ function renderResults(sel,fit){
       <div class="rtslot">${rtBar(r)}</div>
       ${r.missing?`<div class="warnline">${r.missing} peaje(s) sin tarifa para esta categoría</div>`:''}</div>`; }).join('');
   const forced=ROUTES.find(r=>r.forced), auto=ROUTES.find(r=>!r.forced);
-  if(forced&&auto&&forced.distance>auto.distance*1.25) $('routes').insertAdjacentHTML('afterbegin',`<div class="status err" style="margin:0 0 4px">La parada <b>“${esc(V&&V.exact?'tu punto':$('via').value.split(',')[0])}”</b> agrega ${Math.round((forced.distance-auto.distance)/1000)} km de desvío: probablemente queda detrás de tu salida o fuera del camino. Elige un punto que esté <b>entre</b> la salida y el destino.</div>`);
+  if(forced && (forced._loop??(forced._loop=hasLoop(lite(forced))))) $('routes').insertAdjacentHTML('afterbegin',`<div class="status err" style="margin:0 0 4px">La parada hace que la ruta <b>vaya y vuelva</b> por la misma vía: quedó pasada del desvío que quieres. <b>Arrastra el círculo blanco</b> en el mapa hasta la vía correcta (antes del cruce o sobre la vía hacia tu destino).</div>`);
+  else if(forced&&auto&&forced.distance>auto.distance*1.25) $('routes').insertAdjacentHTML('afterbegin',`<div class="status err" style="margin:0 0 4px">La parada <b>“${esc(V&&V.exact?'tu punto':$('via').value.split(',')[0])}”</b> agrega ${Math.round((forced.distance-auto.distance)/1000)} km de desvío: probablemente queda detrás de tu salida o fuera del camino. Elige un punto que esté <b>entre</b> la salida y el destino.</div>`);
   $('routes').insertAdjacentHTML('beforeend',`<p class="foot" style="margin:2px 2px 0">Los tiempos son estimados sin tráfico. Si sabes que una vía es más fluida, escríbela en <b>“Pasar por”</b> para forzar la ruta.</p>`);
   $('routes').querySelectorAll('.rc').forEach(c=>c.onclick=()=>{ renderResults(+c.dataset.i,false); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); });
   if(s._rt){ setTimeout(()=>paintRoadTypes(SEL),0); } else { $('rtlegend').innerHTML='<span class="foot">Cargando tipo de vía…</span>'; paintRoadTypes(SEL); }
