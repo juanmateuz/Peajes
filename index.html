@@ -870,6 +870,7 @@ code{background:#f2f3f5;padding:1px 5px;border-radius:5px;font-size:11px}
       <div><label>Precio galón (COP)</label><input class="in" id="gal" type="number" inputmode="numeric" placeholder="tu precio"></div>
       <div><label>Rendimiento (km/gal)</label><input class="in" id="kmg" type="number" inputmode="numeric" placeholder="ej. 40"></div>
     </div>
+    <label class="check"><input type="checkbox" id="explore" checked><span>Buscar <b>más rutas</b> automáticamente por otros corredores (tarda unos segundos más)</span></label>
     <label class="check"><input type="checkbox" id="avoid"><span>Probar también una ruta evitando peajes (según OpenStreetMap, puede ser incompleto)</span></label>
     <div style="margin-top:10px"><label style="font-size:12px;color:var(--mute)">Peajes sin tarifa confirmada (Cat. I)</label><select id="unv"><option value="est">Usar $17.500 (estimado)</option><option value="data">Usar dato de Supertransporte</option></select></div>
     <label class="check"><input type="checkbox" id="diff"><span>Tengo <b>tarifa diferencial</b> de Autopistas del Café (residente de Manizales, Chinchiná, Villamaría, Palestina, Santa Rosa o Circasia): Tarapacá I, II y Circasia a $700. Debes estar inscrito con el concesionario.</span></label>
@@ -1306,6 +1307,43 @@ function tollsOnRoute(coords,tol){
   const out=[]; for(const h of hits){ const pv=out[out.length-1]; if(pv&&pv.t.name===h.t.name&&pv.t!==h.t&&Math.abs(pv.km-h.km)<1.5){pv.dup=(pv.dup||1)+1;continue;} out.push(h); }
   return out;
 }
+// ---------- Rutas alternativas automáticas ----------
+function destPt(p,brg,d){ const r=Math.PI/180, dr=d/R, b=brg*r, la=p[0]*r, lo=p[1]*r;
+  const la2=Math.asin(Math.sin(la)*Math.cos(dr)+Math.cos(la)*Math.sin(dr)*Math.cos(b));
+  const lo2=lo+Math.atan2(Math.sin(b)*Math.sin(dr)*Math.cos(la),Math.cos(dr)-Math.sin(la)*Math.sin(la2)); return [la2/r,lo2/r]; }
+function cumDist(c){ const cum=[0]; for(let i=1;i<c.length;i++) cum.push(cum[i-1]+hav(c[i-1],c[i])); return cum; }
+function sample(c,step){ const cum=cumDist(c), out=[]; let nx=0; for(let i=0;i<c.length;i++){ if(cum[i]>=nx){ out.push({p:c[i],d:cum[i]}); nx=cum[i]+step; } } return out; }
+function nearAny(p,c,tol){ for(let i=1;i<c.length;i++){ if(segDist(p,c[i-1],c[i])[0]<tol) return true; } return false; }
+function overlap(a,b){ const sm=sample(a,1500); if(!sm.length) return 1; let k=0; sm.forEach(x=>{ if(nearAny(x.p,b,350)) k++; }); return k/sm.length; }
+function hasLoop(c){ const sm=sample(c,800); for(let i=0;i<sm.length;i++) for(let j=i+1;j<sm.length;j++){ if(sm[j].d-sm[i].d>6000 && hav(sm[i].p,sm[j].p)<250) return true; } return false; }
+function pointAt(c,frac){ const cum=cumDist(c), tot=cum[cum.length-1], t=tot*frac; let i=1; while(i<c.length-1&&cum[i]<t) i++;
+  const a=c[Math.max(0,i-1)], j=Math.min(c.length-1,i+15), b=c[j]; return {p:a, brg:bearing(c[Math.max(0,i-15)],b), tot}; }
+async function exploreRoutes(base){
+  const main=base[0]; const c=main.coords; const straight=hav([A.lat,A.lon],[B.lat,B.lon]);
+  const D=Math.max(4000,Math.min(45000,straight*.15)); const found=[];
+  const cands=[]; [.2,.5,.8].forEach(f=>[90,-90].forEach(side=>cands.push({f,side})));
+  for(const k of cands){
+    if(found.length>=3) break;
+    try{
+      const {p,brg}=pointAt(c,k.f); const q=destPt(p,(brg+k.side+360)%360,D);
+      const rr=await osrm(A,B,'',{lat:q[0],lon:q[1]}); const r=rr&&rr[0]; if(!r) continue;
+      r.coords=r.geometry.coordinates.map(x=>[x[1],x[0]]);
+      if(r.duration>main.duration*1.6 || hasLoop(r.coords)) continue;
+      if([...ROUTES,...found].some(o=>overlap(r.coords,o.coords)>.85 && overlap(o.coords,r.coords)>.85)) continue;
+      r.label='Otra ruta'; r.auto=true; found.push(r);
+    }catch(e){}
+    await new Promise(z=>setTimeout(z,250));
+  }
+  return found;
+}
+async function nameRoute(r){
+  // nombre por el pueblo del tramo que no comparte con la ruta principal
+  const main=ROUTES.find(x=>!x.auto&&!x.forced)||ROUTES[0]; const sm=sample(r.coords,2000).filter(x=>!nearAny(x.p,main.coords,500));
+  const pick=sm.length?sm[Math.floor(sm.length/2)].p:sample(r.coords,2000)[0].p;
+  try{ const d=await (await fetch(`${NOMI}/reverse?format=json&accept-language=es&zoom=12&lat=${pick[0]}&lon=${pick[1]}`)).json();
+    const a=d.address||{}; const n=a.town||a.village||a.city||a.municipality||a.hamlet||a.county; if(n) r.label='Por '+n; }catch(e){}
+}
+
 // ---------- Rutas ----------
 async function osrm(a,b,extra='',via=null){ const pts=[a,via,b].filter(Boolean).map(p=>`${p.lon},${p.lat}`).join(';'); const d=await (await fetch(`${OSRM}/route/v1/driving/${pts}?overview=full&geometries=geojson&alternatives=${via?'false':'3'}${extra}`)).json(); if(d.code!=='Ok') throw new Error(d.message||d.code); return d.routes; }
 $('go').onclick=async()=>{
@@ -1323,11 +1361,22 @@ $('go').onclick=async()=>{
     drawPins(); if(!V||!V.road) st('');
     let routes=[];
     if(V){ const vr=await osrm(A,B,'',V); if(vr[0]) routes.push({...vr[0],label:'Por '+($('via').value.split(',')[0]||'tu parada'),forced:true}); }
-    routes=routes.concat((await osrm(A,B)).map((r,i)=>({...r,label:i===0?'Automática (OSRM)':'Alternativa '+i})));
+    routes=routes.concat((await osrm(A,B)).map((r,i)=>({...r,label:i===0?'Ruta principal':'Alternativa '+i})));
     if($('avoid').checked){ try{ const nr=await osrm(A,B,'&exclude=toll'); if(nr[0]) routes.push({...nr[0],label:'Evitando peajes'}); }catch(e){} }
     ROUTES=[]; for(const r of routes){ if(!ROUTES.some(x=>Math.abs(x.distance-r.distance)<500&&Math.abs(x.duration-r.duration)<120)) ROUTES.push(r); }
     ROUTES.forEach(r=>r.coords=r.geometry.coordinates.map(c=>[c[1],c[0]]));
     renderResults(ROUTES[0]&&ROUTES[0].forced?0:pickByPrio(),true);
+    if($('explore').checked && !V){
+      const token=Symbol(); window._exTok=token;
+      st('Buscando más rutas por otros corredores…');
+      const extra=await exploreRoutes(ROUTES.filter(r=>!r.forced));
+      if(window._exTok!==token) return;
+      if(extra.length){ const selRoute=ROUTES[SEL]; ROUTES.push(...extra);
+        for(const r of ROUTES.filter(x=>x.label.startsWith('Alternativa')||x.auto)){ await nameRoute(r); await new Promise(z=>setTimeout(z,1100)); if(window._exTok!==token) return; }
+        renderResults(PRIO==='fast'&&selRoute?ROUTES.indexOf(selRoute):pickByPrio(),false);
+        st(`Encontré ${extra.length} ruta(s) más. Toca una tarjeta para verla.`,'ok');
+      } else st('No encontré otras rutas razonables además de las mostradas.');
+    }
   }catch(e){ st('No pude calcular la ruta: '+esc(e.message),'err'); }
   finally{ $('go').textContent='Calcular ruta'; }
 };
