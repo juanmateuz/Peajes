@@ -383,14 +383,15 @@ paintPrio();
 document.querySelectorAll('#prio .chip').forEach(c=>c.onclick=()=>{ PRIO=c.dataset.p; paintPrio(); try{localStorage.setItem('peajes_prio',PRIO);}catch(e){}
   if(!ROUTES.length) return;
   const fi=ROUTES.findIndex(r=>r.forced);
-  if(fi>=0){ renderResults(fi,false); toast('Tienes paradas: se mantiene la ruta por tus paradas'); } else renderResults(pickByPrio(),true); });
+  if(fi>=0){ renderResults(pickByPrio(),false); toast('Tienes paradas: elijo entre las rutas que pasan por ellas'); } else renderResults(pickByPrio(),true); });
 function pickByPrio(){
   if(!ROUTES.length) return 0;
   const tol=+$('tol').value||120, cat=$('cat').value, gal=+$('gal').value, kmg=+$('kmg').value;
   const val=r=>{ if(PRIO==='short') return r.distance; if(PRIO==='fast') return r.duration;
     const hits=routeHits(r,tol); const t=cat?hits.reduce((s,h)=>s+(priceOf(h.t,cat).v||0),0):hits.length;
     return t+(gal&&kmg? r.distance/1000/kmg*gal : 0) + r.duration/1e6; };
-  let b=0; ROUTES.forEach((r,i)=>{ if(val(r)<val(ROUTES[b])) b=i; }); return b;
+  const pool=ROUTES.map((r,i)=>i).filter(i=>!ROUTES.some(x=>x.forced)||ROUTES[i].forced);
+  let b=pool[0]; pool.forEach(i=>{ if(val(ROUTES[i])<val(ROUTES[b])) b=i; }); return b;
 }
 // ---------- Vehículos ----------
 let VEHS=[], VSEL=null, VEDIT=null, TRIP=1;
@@ -610,6 +611,21 @@ function labelPoint(r){
   for(let i=lo;i<hi;i++){ const p=sm[i].p; if(avoid.some(a=>hav(a,p)<minAv)) continue; let m=1e12; for(const o of others){ const oc=o.coords; for(let k=0;k<oc.length;k+=Math.max(1,Math.floor(oc.length/300))) m=Math.min(m,hav(p,oc[k])); } if(!others.length) m=0; if(m>bd){bd=m;best=sm[i];} }
   return best.p;
 }
+async function nameVariants(seq){
+  const f=ROUTES.filter(r=>r.forced); const ref=f[0];
+  for(const r of f.filter(x=>x.variant)){
+    const sm=sample(lite(r),2000).filter(x=>!nearAny(x.p,lite(ref),500)); if(!sm.length) continue;
+    const pk=sm[Math.floor(sm.length/2)].p;
+    try{ const d=await getJSON(`${NOMI}/reverse?format=json&accept-language=es&zoom=12&lat=${pk[0]}&lon=${pk[1]}`,{},8000); const a=d.address||{}; const n=a.town||a.village||a.city||a.municipality||a.county;
+      if(n){ r.label=r.label.replace('otra vía','por '+n); } }catch(e){}
+    if(seq!==CALC_SEQ) return; await new Promise(z=>setTimeout(z,1100));
+  }
+  // también la principal, por el pueblo donde se separa de la primera variante
+  const v1=f.find(x=>x.variant);
+  if(v1){ const sm=sample(lite(ref),2000).filter(x=>!nearAny(x.p,lite(v1),500));
+    if(sm.length){ const pk=sm[Math.floor(sm.length/2)].p; try{ const d=await getJSON(`${NOMI}/reverse?format=json&accept-language=es&zoom=12&lat=${pk[0]}&lon=${pk[1]}`,{},8000); const a=d.address||{}; const n=a.town||a.village||a.city||a.municipality||a.county; if(n&&!/ por /.test(ref.label)) ref.label+=' · por '+n; }catch(e){} } }
+  if(seq===CALC_SEQ){ ROUTES.forEach(r=>delete r._lp); renderResults(null,false); }
+}
 async function nameRoute(r){
   // nombre por el pueblo del tramo que no comparte con la ruta principal
   const main=ROUTES.find(x=>!x.auto&&!x.forced)||ROUTES[0]; const sm=sample(lite(r),2000).filter(x=>!nearAny(x.p,lite(main),500));
@@ -620,6 +636,28 @@ async function nameRoute(r){
 
 // ---------- Rutas ----------
 async function osrm(a,b,extra='',via=null){ const pts=[a,...(Array.isArray(via)?via:[via]),b].filter(Boolean).map(p=>`${p.lon},${p.lat}`).join(';'); const d=await getJSON(`${OSRM}/route/v1/driving/${pts}?overview=full&geometries=geojson&alternatives=${via?'false':'3'}${extra}`); if(d.code!=='Ok') throw new Error(d.message||d.code); return d.routes; }
+// Con paradas: alternativas de cada tramo combinadas → varias rutas que pasan por TODAS las paradas
+async function forcedVariants(stops){
+  const pts=[A,...stops,B], legs=[];
+  for(let i=0;i<pts.length-1;i++){
+    const rs=await osrm(pts[i],pts[i+1]);               // hasta 3 alternativas por tramo
+    legs.push(rs.slice(0,stops.length>1?2:3).map(r=>({d:r.distance,t:r.duration,c:r.geometry.coordinates})));
+    await new Promise(z=>setTimeout(z,150));
+  }
+  let combos=[{d:0,t:0,c:[]}];
+  for(const lg of legs){ const nx=[]; for(const cb of combos) for(const l of lg) nx.push({d:cb.d+l.d,t:cb.t+l.t,c:cb.c.length?cb.c.concat(l.c.slice(1)):l.c.slice()}); combos=nx.slice(0,27); }
+  combos.sort((a,b)=>a.t-b.t);
+  const out=[];
+  for(const cb of combos){
+    const r={distance:cb.d,duration:cb.t,geometry:{type:'LineString',coordinates:cb.c},forced:true};
+    r.coords=cb.c.map(x=>[x[1],x[0]]);
+    if(r.duration>combos[0].t*1.8) continue;
+    if(out.some(o=>overlap(lite(r),lite(o))>.9&&overlap(lite(o),lite(r))>.9)) continue;
+    if(hasLoop(lite(r)) && out.length) continue;
+    out.push(r); if(out.length>=3) break;
+  }
+  return out;
+}
 let CALC_SEQ=0;
 async function calc(opt={}){
   const RR=!!opt.reroute; const seq=++CALC_SEQ; window._exTok=Symbol('cancel'); $('sorig').hidden=true; $('sdest').hidden=true; $('svia').hidden=true; $('go').textContent='Calculando…';
@@ -636,13 +674,18 @@ async function calc(opt={}){
     }
     drawPins(); if(!hasStops()) st('');
     let routes=[];
-    if(hasStops()){ const stops=allStops(); const vr=await osrm(A,B,'',stops); if(vr[0]) routes.push({...vr[0],label:stops.length>1?'Por tus '+stops.length+' paradas':(V&&V.exact?'Por tu punto':'Por '+($('via').value.split(',')[0]||'tu parada')),forced:true}); }
+    if(hasStops()){ const stops=allStops();
+      const base=stops.length>1?'Por tus '+stops.length+' paradas':(V&&V.exact?'Por tu punto':'Por '+($('via').value.split(',')[0]||'tu parada'));
+      let fv=[]; try{ fv=await forcedVariants(stops); }catch(e){}
+      if(!fv.length){ const vr=await osrm(A,B,'',stops); if(vr[0]) fv=[{...vr[0],forced:true}]; }
+      fv.forEach((r,i)=>{ r.label=i===0?base:base+' · otra vía'; r.variant=i>0; routes.push(r); }); }
     routes=routes.concat((await osrm(A,B)).map((r,i)=>({...r,label:i===0?'Ruta principal':'Alternativa '+i})));
     if($('avoid').checked){ try{ const nr=await osrm(A,B,'&exclude=toll'); if(nr[0]) routes.push({...nr[0],label:'Evitando peajes'}); }catch(e){} }
     if(seq!==CALC_SEQ) return;   // llegó un cálculo más nuevo
     ROUTES=[]; for(const r of routes){ if(!ROUTES.some(x=>Math.abs(x.distance-r.distance)<500&&Math.abs(x.duration-r.duration)<120)) ROUTES.push(r); }
-    ROUTES.forEach(r=>r.coords=r.geometry.coordinates.map(c=>[c[1],c[0]]));
-    renderResults(ROUTES[0]&&ROUTES[0].forced?0:pickByPrio(),RR&&FOLLOW?false:true);
+    ROUTES.forEach(r=>{ if(!r.coords) r.coords=r.geometry.coordinates.map(c=>[c[1],c[0]]); });
+    renderResults(pickByPrio(),RR&&FOLLOW?false:true);
+    if(ROUTES.some(r=>r.variant)) nameVariants(seq);
     if(RR){ toast('Ruta recalculada desde tu ubicación'); if(FOLLOW&&ME) map.panTo([ME.lat,ME.lon]); }
     if($('explore').checked && !hasStops() && !RR){
       const token=Symbol(); window._exTok=token;

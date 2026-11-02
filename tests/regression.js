@@ -134,12 +134,14 @@ await E(()=>{ map.closePopup(); A={lat:4.6,lon:-74.1,label:'a'}; B={lat:6.25,lon
 await E(()=>pointMenu(L.latLng(5.2237,-74.7702))); await p.waitForTimeout(150);
 await p.click('.leaflet-popup-content [data-w="V"]'); await p.waitForTimeout(1500);
 ok('Pasar por aquí (mapa) usa el punto exacto', await E(()=>V&&V.exact&&Math.abs(V.lat-5.2237)<1e-9) && /-74\.7702,5\.2237/.test(decodeURIComponent(await E(()=>performance.getEntriesByType('resource').map(e=>e.name).filter(n=>n.includes('project-osrm')).join(' ')))));
-ok('La ruta por el punto queda seleccionada', await E(()=>ROUTES[SEL].forced===true && ROUTES[SEL].label==='Por tu punto'));
+ok('La ruta por el punto queda seleccionada', await E(()=>ROUTES[SEL].forced===true && ROUTES[SEL].label.startsWith('Por tu punto')));
+ok('Con parada hay varias rutas para elegir (alternativas por tramo)', await E(()=>ROUTES.filter(r=>r.forced).length>=2));
+ok('Todas las rutas por parada pasan por la parada', await E(()=>ROUTES.filter(r=>r.forced).every(r=>r.coords.some(c=>hav(c,[V.lat,V.lon])<50))));
 ok('Coordenadas escritas se respetan', await E(()=>{ const c=parseCoords('5.2237, -74.7702'); return c&&c.exact&&c.lon===-74.7702; }));
 // arrastrar la parada recalcula por el punto nuevo
 await E(()=>{ const m=pinLayer.getLayers().find(l=>l.dragging&&l.getTooltip()&&/Parada/.test(l.getTooltip().getContent())); m.setLatLng([5.5,-75.0]); m.fire('dragstart'); m.fire('dragend'); });
 await p.waitForTimeout(1500);
-ok('Arrastrar la parada recalcula por el nuevo punto', await E(()=>V.exact&&V.lat===5.5&&document.getElementById('via').value==='5.5000, -75.0000'&&ROUTES[SEL].forced));
+ok('Arrastrar la parada recalcula por el nuevo punto', await E(()=>V.exact&&V.lat===5.5&&document.getElementById('via').value==='5.5000, -75.0000'&&ROUTES[SEL].forced&&ROUTES[SEL].coords.some(c=>hav(c,[5.5,-75.0])<50)));
 ok('Salida, parada y destino son arrastrables', await E(()=>pinLayer.getLayers().filter(l=>l.options.draggable).length>=2));
 // parada pasada del destino → aviso de ida y vuelta
 await E(()=>{ V={lat:6.745,lon:-76.011,label:'x',picked:true,exact:true}; document.getElementById('via').value='6.7450, -76.0110'; });
@@ -153,12 +155,12 @@ await p.click('#go'); await p.waitForTimeout(1200);
 await E(()=>pointMenu(L.latLng(4.75,-74.5))); await p.waitForTimeout(150);
 ok('Menú ofrece "Agregar parada aquí" cuando ya hay una', (await p.textContent('.leaflet-popup-content')).includes('Agregar parada aquí'));
 await p.click('.leaflet-popup-content [data-w="V"]'); await p.waitForTimeout(1500);
-const urls=await E(()=>performance.getEntriesByType('resource').map(e=>decodeURIComponent(e.name)).filter(n=>n.includes('project-osrm')&&n.split('/driving/')[1].split('?')[0].split(';').length===4));
-ok('Ruta con 2 paradas en orden del viaje', urls.length>0 && urls[urls.length-1].includes('-74.1,4.6;-74.5,4.75;-75,5.5;-75.57,6.25'), urls.slice(-1)[0]);
+const legs=await E(()=>performance.getEntriesByType('resource').map(e=>decodeURIComponent(e.name)).filter(n=>n.includes('project-osrm')).map(n=>n.split('/driving/')[1].split('?')[0]));
+ok('Ruta con 2 paradas en orden del viaje (tramo por tramo)', ['-74.1,4.6;-74.5,4.75','-74.5,4.75;-75,5.5','-75,5.5;-75.57,6.25'].every(x=>legs.includes(x)), legs.slice(-4).join(' | '));
 ok('Lista muestra la parada adicional', await E(()=>document.querySelectorAll('#vialist input').length===1));
-ok('Etiqueta "Por tus 2 paradas"', await E(()=>ROUTES[SEL].label==='Por tus 2 paradas'));
+ok('Etiqueta "Por tus 2 paradas"', await E(()=>ROUTES[SEL].label.startsWith('Por tus 2 paradas')));
 await p.click('#vialist [data-x="0"]'); await p.waitForTimeout(1200);
-ok('Quitar parada adicional', await E(()=>EXTRA.length===0 && ROUTES[SEL].label==='Por tu punto'));
+ok('Quitar parada adicional', await E(()=>EXTRA.length===0 && ROUTES[SEL].label.startsWith('Por tu punto')));
 await E(()=>{ for(let k=0;k<3;k++) EXTRA.push({lat:5+k*0.1,lon:-74.8,label:'x',exact:true}); });
 await E(()=>pointMenu(L.latLng(5.9,-75.2))); await p.waitForTimeout(150); await p.click('.leaflet-popup-content [data-w="V"]'); await p.waitForTimeout(300);
 ok('Límite de 4 paradas', await E(()=>1+EXTRA.length===4));
