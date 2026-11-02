@@ -433,8 +433,13 @@ let TRIPS=[], PREFER=null, RECORDED=-1;
 try{ TRIPS=JSON.parse(localStorage.getItem('peajes_trips')||'[]'); }catch(e){}
 const saveTrips=()=>{ try{ localStorage.setItem('peajes_trips',JSON.stringify(TRIPS.slice(0,30))); }catch(e){} };
 const r5=x=>Math.round(x*1e5)/1e5;
-function shortName(p){ return String(p.label||'').replace(/^Mi ubicación\s*·?\s*/,'').split(',')[0].trim()||(p.lat.toFixed(3)+','+p.lon.toFixed(3)); }
-async function townName(p){ try{ const d=await getJSON(`${NOMI}/reverse?format=json&accept-language=es&zoom=10&lat=${p.lat}&lon=${p.lon}`,{},8000); const a=d.address||{}; return a.town||a.city||a.village||a.municipality||a.county||null; }catch(e){ return null; } }
+// Nombres genéricos de OSM en Colombia ("Perímetro Urbano X", "Cabecera Municipal", "Zona Urbana") → nombre limpio
+const GENERIC=/^(per[ií]metro urbano|zona urbana|cabecera municipal|casco urbano|área urbana|area urbana|centro poblado)\b\s*(de\s+)?/i;
+function cleanPlace(n){ n=String(n||'').trim(); const c=n.replace(GENERIC,'').trim(); return c || ''; }
+function shortName(p){ const parts=String(p.label||'').replace(/^Mi ubicación\s*·?\s*/,'').split(',').map(x=>cleanPlace(x)).filter(x=>x&&!/^\d/.test(x)&&!/^(calle|carrera|cra|cl|avenida|av|diagonal|transversal)\b/i.test(x));
+  return parts[0]||(p.lat.toFixed(3)+', '+p.lon.toFixed(3)); }
+async function townName(p){ try{ const d=await getJSON(`${NOMI}/reverse?format=json&accept-language=es&zoom=10&lat=${p.lat}&lon=${p.lon}`,{},8000); const a=d.address||{};
+  for(const k of ['city','town','municipality','village','county']){ const v=cleanPlace(a[k]); if(v) return v; } return null; }catch(e){ return null; } }
 function sameTrip(t,from,to,geom){ return hav([t.from.lat,t.from.lon],[from.lat,from.lon])<2000 && hav([t.to.lat,t.to.lon],[to.lat,to.lon])<2000 && overlap(geom,t.geom)>.85 && overlap(t.geom,geom)>.85; }
 async function recordTrip(manual){
   const r=ROUTES[SEL]; if(!r||!A||!B) return;
@@ -446,9 +451,9 @@ async function recordTrip(manual){
   let t=TRIPS.find(x=>sameTrip(x,from,to,geom));
   if(t){ t.count++; t.last=Date.now(); t.geom=geom; t.km=Math.round(r.distance/1000); t.stops=stops; }
   else{
-    const fn=A.isMe?(await townName(A))||shortName(A):shortName(A), tn=shortName(B);
+    const fn=(await townName(A))||shortName(A); await new Promise(z=>setTimeout(z,1100)); const tn=(await townName(B))||shortName(B);
     const via=r.label&&/ por (.+)$/.test(r.label)?r.label.match(/ por (.+)$/)[1]:null;
-    t={id:String(Date.now()),name:fn+' → '+tn+(via?' (por '+via+')':''),from:{...from,isMe:!!A.isMe},to,stops,geom,km:Math.round(r.distance/1000),count:1,last:Date.now()};
+    t={id:String(Date.now()),name:(fn===tn?fn+' (dentro de la ciudad)':fn+' → '+tn)+(via?' · por '+cleanPlace(via):''),from:{...from,isMe:!!A.isMe},to,stops,geom,km:Math.round(r.distance/1000),count:1,last:Date.now()};
     TRIPS.unshift(t);
   }
   saveTrips(); drawTrips(); if(manual) toast('Guardada en Tus rutas: '+t.name);
@@ -482,6 +487,11 @@ function markHabitual(){
   return best;
 }
 drawTrips();
+// Renombrar viajes guardados con nombres genéricos (una vez, en segundo plano)
+(async()=>{ let ch=false; for(const t of TRIPS){ if(!/per[ií]metro urbano|zona urbana|cabecera municipal|casco urbano/i.test(t.name)) continue;
+  const fn=(await townName(t.from))||shortName(t.from); await new Promise(z=>setTimeout(z,1100)); const tn=(await townName(t.to))||shortName(t.to); await new Promise(z=>setTimeout(z,1100));
+  const via=(t.name.match(/(?:\(por |· por )([^)]+)\)?$/)||[])[1]; t.name=(fn===tn?fn+' (dentro de la ciudad)':fn+' → '+tn)+(via?' · por '+cleanPlace(via):''); ch=true; }
+  if(ch){ saveTrips(); drawTrips(); } })();
 
 // ---------- Fuera de ruta → recalcular ----------
 let OFF=0, LAST_RR=0, REROUTING=false, ARRIVED=-1;
@@ -673,7 +683,7 @@ async function nameVariants(seq){
     const sm=sample(lite(r),2000).filter(x=>!nearAny(x.p,lite(ref),500)); if(!sm.length) continue;
     const pk=sm[Math.floor(sm.length/2)].p;
     try{ const d=await getJSON(`${NOMI}/reverse?format=json&accept-language=es&zoom=12&lat=${pk[0]}&lon=${pk[1]}`,{},8000); const a=d.address||{}; const n=a.town||a.village||a.city||a.municipality||a.county;
-      if(n){ r.label=r.label.replace('otra vía','por '+n); } }catch(e){}
+      if(n){ r.label=r.label.replace('otra vía','por '+cleanPlace(n)); } }catch(e){}
     if(seq!==CALC_SEQ) return; await new Promise(z=>setTimeout(z,1100));
   }
   // también la principal, por el pueblo donde se separa de la primera variante

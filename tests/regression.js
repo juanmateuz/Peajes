@@ -25,7 +25,7 @@ await p.route('**/*',async r=>{const u=r.request().url();
    if(q.startsWith('Honda'))return J(r,{features:[F(5.0,-74.95,'Honda','waterway'),F(5.205,-74.74,'Honda','place')].map(f=>(f.properties.osm_value=f.properties.osm_key==='place'?'town':'stream',f))});
    if(q.startsWith('Panam'))return J(r,{features:[F(9,-70,'Panamericana','highway'),F(5.5,-75.0,'Panamericana','highway'),F(3,-77,'Panamericana','highway')]});
    return J(r,{features:[q.startsWith('Bog')?F(4.6,-74.1,'Bogotá'):F(6.25,-75.57,'Medellín')]});}
- if(u.includes('nominatim')){nomiCalls++;return J(r,{address:{town:'<img src=x onerror=window.__xss=1>'}});}
+ if(u.includes('nominatim')){nomiCalls++; if(u.includes('zoom=10')){ const lat=+u.split('lat=')[1].split('&')[0]; return J(r,{address:lat<5?{city:'Perímetro Urbano Bogotá'}:{town:'Perímetro Urbano Medellín',county:'Valle de Aburrá'}}); } return J(r,{address:{town:'<img src=x onerror=window.__xss=1>'}});}
  if(u.includes('valhalla')){valhallaCalls++;const bd=JSON.parse(r.request().postData());const sh=bd.encoded_polyline;let n=0,i=0;while(i<sh.length){for(const k of [0,1]){let x;do{x=sh.charCodeAt(i++)-63}while(x>=32)}n++}
    return J(r,{shape:sh,edges:[{road_class:'trunk',surface:'paved',length:100,begin_shape_index:0,end_shape_index:Math.max(1,Math.floor(n/2))},{road_class:'tertiary',unpaved:true,length:12,begin_shape_index:Math.max(1,Math.floor(n/2)),end_shape_index:n-1}]});}
  if(u.includes('project-osrm')){osrmCalls++; if(slowOsrm) await new Promise(z=>setTimeout(z,1500));
@@ -178,10 +178,11 @@ await E(()=>{ localStorage.removeItem('peajes_trips'); TRIPS=[]; drawTrips(); ma
   A={lat:4.6,lon:-74.1,label:'Bogotá, Cundinamarca'}; B={lat:6.25,lon:-75.57,label:'Medellín, Antioquia'}; document.getElementById('orig').value='Bogotá'; document.getElementById('dest').value='Medellín'; });
 await p.click('#go'); await p.waitForTimeout(1500);
 await E(()=>renderResults(0,false)); await p.click('#savetrip'); await p.waitForTimeout(300);
-ok('Guardar ruta crea un viaje frecuente', await E(()=>TRIPS.length===1 && TRIPS[0].name==='Bogotá → Medellín' && !document.getElementById('tripsWrap').hidden));
+await p.waitForTimeout(2500);
+ok('Guardar ruta crea un viaje frecuente con nombres de municipio (sin "Perímetro Urbano")', await E(()=>TRIPS.length===1 && TRIPS[0].name==='Bogotá → Medellín' && !document.getElementById('tripsWrap').hidden), await E(()=>TRIPS[0]&&TRIPS[0].name));
 await p.click('#go'); await p.waitForTimeout(1500); await E(()=>renderResults(0,false)); await p.click('#savetrip'); await p.waitForTimeout(300);
 ok('Mismo viaje por la misma vía no se duplica (suma +1)', await E(()=>TRIPS.length===1 && TRIPS[0].count===2));
-await E(()=>{ const i=ROUTES.findIndex((r,k)=>k>0 && overlap(lite(r),lite(ROUTES[0]))<.5); renderResults(i,false); }); await p.click('#savetrip'); await p.waitForTimeout(300);
+await E(()=>{ const i=ROUTES.findIndex((r,k)=>k>0 && overlap(lite(r),lite(ROUTES[0]))<.5); renderResults(i,false); }); await p.click('#savetrip'); await p.waitForTimeout(2600);
 ok('Mismo origen/destino por otra vía se guarda aparte', await E(()=>TRIPS.length===2));
 ok('Iniciar no cuenta dos veces el mismo cálculo', await E(()=>{ const n=TRIPS.reduce((a,t)=>a+t.count,0); RECORDED=CALC_SEQ; recordTrip(false); return TRIPS.reduce((a,t)=>a+t.count,0)===n; }));
 // cargar el viaje por la otra vía: debe seleccionar esa como habitual
@@ -190,7 +191,11 @@ ok('Tocar un viaje frecuente selecciona tu ruta habitual', await E(()=>{ const t
 ok('Etiqueta ★ Tu ruta habitual', (await p.textContent('#routes')).includes('Tu ruta habitual'));
 await p.click('#tripEdit'); await E(()=>{ document.querySelector('#trips [data-del]').click(); });
 await p.click('#tripEdit'); await E(()=>{ scrollTo(0,0); document.body.classList.remove('bigmap'); }); await p.waitForTimeout(300); 
+ok('Limpieza de nombres genéricos', await E(()=>cleanPlace('Perímetro Urbano Victoria')==='Victoria' && cleanPlace('Cabecera Municipal de Chinchiná')==='Chinchiná' && shortName({label:'Perímetro Urbano Manizales, Caldas',lat:5,lon:-75})==='Manizales'));
 ok('Borrar un viaje frecuente', await E(()=>TRIPS.length===1 && JSON.parse(localStorage.getItem('peajes_trips')).length===1));
+await E(()=>localStorage.setItem('peajes_trips',JSON.stringify([{id:'1',name:'Perímetro Urbano → Perímetro Urbano',from:{lat:4.6,lon:-74.1,label:'x'},to:{lat:6.25,lon:-75.57,label:'y'},stops:[],geom:[[4.6,-74.1],[6.25,-75.57]],km:415,count:3,last:1}])));
+await p.reload(); await p.waitForTimeout(4500);
+ok('Rutas guardadas con "Perímetro Urbano" se renombran solas', await E(()=>TRIPS[0].name==='Bogotá → Medellín' && TRIPS[0].count===3), await E(()=>TRIPS[0].name));
 ok('Sin errores JS en todo el recorrido', errors.length===0, errors.join(' | '));
 console.log(results.join('\n'));console.log(`\n${results.filter(x=>x.startsWith('PASS')).length}/${results.length} pruebas OK · OSRM:${osrmCalls} Valhalla:${valhallaCalls} Photon:${photonCalls} Nominatim:${nomiCalls}`);
 await b.close();srv.close();})();
