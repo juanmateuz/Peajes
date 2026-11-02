@@ -969,6 +969,7 @@ let tileErr=0; base.on('tileerror',()=>{ if(++tileErr===8){ map.removeLayer(base
 const tollLayer = L.featureGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
 const rtLayer = L.layerGroup().addTo(map);
+const bubLayer = L.layerGroup().addTo(map);
 const pinLayer = L.layerGroup().addTo(map);
 
 const CAR_SVG = `<svg class="car" width="46" height="46" viewBox="0 0 46 46" style="position:relative;filter:drop-shadow(0 4px 5px rgba(0,0,0,.35))">
@@ -1199,7 +1200,7 @@ function updateCar(lat,lon,heading){
   if((deg==null||isNaN(deg)) && lastMe && hav(lastMe,[lat,lon])>8) deg=bearing(lastMe,[lat,lon]);
   if(deg==null||isNaN(deg)) deg=carMarker?carMarker._deg:0;
   lastMe=[lat,lon];
-  if(!carMarker){ carMarker=L.marker([lat,lon],{icon:carIcon(deg),zIndexOffset:1000}).addTo(map); }
+  if(!carMarker){ carMarker=L.marker([lat,lon],{icon:carIcon(deg),zIndexOffset:5000}).addTo(map); }
   else { carMarker.setLatLng([lat,lon]); if(deg!==carMarker._deg) carMarker.setIcon(carIcon(deg)); }
   carMarker._deg=deg;
 }
@@ -1286,7 +1287,9 @@ document.querySelectorAll('#trip button').forEach(b=>b.onclick=()=>{ TRIP=+b.dat
 paintTrip(); drawVehs();
 
 let FOLLOW=false;
-function setFollow(on){ FOLLOW=on; $('fabLoc').classList.toggle('on',on); }
+function setFollow(on){ FOLLOW=on; $('fabLoc').classList.toggle('on',on); syncBubbles(); }
+function syncBubbles(){ const hide=FOLLOW||map.getZoom()>=15; if(hide&&map.hasLayer(bubLayer)) map.removeLayer(bubLayer); if(!hide&&!map.hasLayer(bubLayer)) map.addLayer(bubLayer); }
+map.on('zoomend',()=>syncBubbles());
 function centerCar(){
   if(!carMarker){ locate(false); return; }
   setFollow(true);
@@ -1301,7 +1304,7 @@ function carAtRouteStart(r){
   let k=1; while(k<c.length-1 && hav(c[0],c[k])<40) k++;
   const deg=bearing(c[0],c[k]);
   lastMe=null;
-  if(!carMarker) carMarker=L.marker(c[0],{icon:carIcon(deg),zIndexOffset:1000}).addTo(map);
+  if(!carMarker) carMarker=L.marker(c[0],{icon:carIcon(deg),zIndexOffset:5000}).addTo(map);
   else { carMarker.setLatLng(c[0]); carMarker.setIcon(carIcon(deg)); }
   carMarker._deg=deg;
 }
@@ -1410,7 +1413,9 @@ function labelPoint(r){
   const others=ROUTES.filter(o=>o!==r); const sm=sample(r.coords,2500);
   if(!sm.length) return r.coords[0];
   const lo=Math.floor(sm.length*.2), hi=Math.ceil(sm.length*.8); let best=sm[Math.floor(sm.length/2)], bd=-1;
-  for(let i=lo;i<hi;i++){ const p=sm[i].p; let m=1e12; for(const o of others){ const oc=o.coords; for(let k=0;k<oc.length;k+=Math.max(1,Math.floor(oc.length/300))) m=Math.min(m,hav(p,oc[k])); } if(!others.length) m=0; if(m>bd){bd=m;best=sm[i];} }
+  const tot=sm[sm.length-1].d||1, avoid=[]; if(carMarker){ const c=carMarker.getLatLng(); avoid.push([c.lat,c.lng]); } if(A) avoid.push([A.lat,A.lon]); if(B) avoid.push([B.lat,B.lon]);
+  const minAv=Math.max(3000,tot*.12);
+  for(let i=lo;i<hi;i++){ const p=sm[i].p; if(avoid.some(a=>hav(a,p)<minAv)) continue; let m=1e12; for(const o of others){ const oc=o.coords; for(let k=0;k<oc.length;k+=Math.max(1,Math.floor(oc.length/300))) m=Math.min(m,hav(p,oc[k])); } if(!others.length) m=0; if(m>bd){bd=m;best=sm[i];} }
   return best.p;
 }
 async function nameRoute(r){
@@ -1475,7 +1480,7 @@ function renderResults(sel,fit){
     r.gals=kmg?r.distance/1000/kmg:null; r.fuel=gal&&kmg?r.gals*gal:null; if(r.tollCost!=null) r.tollCost*=TRIP; if(r.fuel!=null){r.fuel*=TRIP; r.gals*=TRIP;} r.total=(r.tollCost||0)+(r.fuel||0); });
   const fastest=Math.min(...ROUTES.map(r=>r.duration)), cheapest=Math.min(...ROUTES.map(r=>r.total)), shortest=Math.min(...ROUTES.map(r=>r.distance));
 
-  routeLayer.clearLayers(); rtLayer.clearLayers();
+  routeLayer.clearLayers(); rtLayer.clearLayers(); bubLayer.clearLayers();
   ROUTES.forEach((r,i)=>{ if(i===SEL) return;
     L.polyline(r.coords,{color:'#7c8799',weight:4,opacity:.45,dashArray:'2 7',lineCap:'round'}).addTo(routeLayer);
     L.polyline(r.coords,{color:'#000',weight:22,opacity:0}).on('click',()=>renderResults(i,false)).addTo(routeLayer); });
@@ -1490,7 +1495,7 @@ function renderResults(sel,fit){
   ROUTES.forEach((r,i)=>{ const lp=r._lp||(r._lp=labelPoint(r));
     const cost=r.fuel!=null?r.total:r.tollCost;
     const m=L.marker(lp,{icon:L.divIcon({className:'',iconSize:[0,0],html:`<div class="rbub ${i===SEL?'on':''}">${hm(r.duration)}<small>${(r.distance/1000).toFixed(0)} km · ${fmt(cost)}</small></div>`}),zIndexOffset:i===SEL?2200:2100});
-    m.on('click',()=>renderResults(i,false)); m.addTo(routeLayer); });
+    m.on('click',()=>renderResults(i,false)); m.addTo(bubLayer); });
   if(fit===true){ setFollow(false); const all=L.latLngBounds([]); ROUTES.forEach(r=>all.extend(L.polyline(r.coords).getBounds())); map.fitBounds(all,{padding:[50,50]}); }
   else if(fit!==false && !FOLLOW) map.fitBounds(main.getBounds(),{padding:[40,40]});
   $('startwrap').innerHTML=`<button class="startbtn" id="startnav"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 21 3l-8 18-2-8-8-2z"/></svg>${ME?'Iniciar y seguir el carro':'Centrar el carro en el mapa'}</button>
