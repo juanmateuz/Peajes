@@ -18,11 +18,14 @@ const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>'
 
 // ---------- Mapa ----------
 const CAN_ROTATE=!!(L.Map.prototype.setBearing);
-const map = L.map('map',CAN_ROTATE?{zoomControl:false,rotate:true,touchRotate:true,shiftKeyRotate:true,bearing:0,rotateControl:false}:{zoomControl:false}).setView([4.6,-74.1],6);
+// Las líneas se dibujan con margen amplio: al girar, la pantalla rotada sigue dentro del área dibujada
+// y no hay que redibujar (evita que la ruta "salte" o se corte mientras se gira).
+const VEC=L.svg({padding:CAN_ROTATE?0.75:0.1});
+const map = L.map('map',CAN_ROTATE?{zoomControl:false,rotate:true,touchRotate:true,shiftKeyRotate:true,bearing:0,rotateControl:false,renderer:VEC}:{zoomControl:false,renderer:VEC}).setView([4.6,-74.1],6);
 L.control.zoom({position:'topright'}).addTo(map);
 const ESRI='https://server.arcgisonline.com/ArcGIS/rest/services/';
-const base=L.tileLayer(ESRI+'World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Mapa © Esri, HERE, Garmin, OpenStreetMap'}).addTo(map);
-let tileErr=0; base.on('tileerror',()=>{ if(++tileErr===8){ map.removeLayer(base); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map); } });
+const base=L.tileLayer(ESRI+'World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,keepBuffer:4,attribution:'Mapa © Esri, HERE, Garmin, OpenStreetMap'}).addTo(map);
+let tileErr=0; base.on('tileerror',()=>{ if(++tileErr===8){ map.removeLayer(base); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,keepBuffer:4,attribution:'© OpenStreetMap'}).addTo(map); } });
 const tollLayer = L.featureGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
 const rtLayer = L.layerGroup().addTo(map);
