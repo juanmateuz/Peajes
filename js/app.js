@@ -375,7 +375,7 @@ function paintLive(){ $('fabLive').classList.toggle('on',LIVE); $('liveTxt').tex
 function stopWatch(){ if(watchId!=null){ navigator.geolocation.clearWatch(watchId); watchId=null; } }
 function startWatch(){ if(!LIVE) return; if(watchId!=null) return;
   watchId=navigator.geolocation.watchPosition(p=>{ ME={lat:p.coords.latitude,lon:p.coords.longitude}; updateCar(ME.lat,ME.lon,p.coords.heading,p.coords.speed);
-    if(A&&A.isMe){ A.lat=ME.lat; A.lon=ME.lon; } if(FOLLOW) map.panTo([ME.lat,ME.lon],{animate:true,duration:0.9,easeLinearity:1,noMoveStart:true}); checkOffRoute(ME.lat,ME.lon,p.coords.accuracy||50); },()=>{}, {enableHighAccuracy:true,maximumAge:5000}); }
+    if(A&&A.isMe){ A.lat=ME.lat; A.lon=ME.lon; } if(FOLLOW) map.panTo([ME.lat,ME.lon],{animate:true,duration:0.9,easeLinearity:1,noMoveStart:true}); checkOffRoute(ME.lat,ME.lon,p.coords.accuracy||50); paintNav(); },()=>{}, {enableHighAccuracy:true,maximumAge:5000}); }
 let PRIO='fast';
 try{ const sp=localStorage.getItem('peajes_prio'); if(sp) PRIO=sp; }catch(e){}
 function paintPrio(){ document.querySelectorAll('#prio .chip').forEach(c=>c.classList.toggle('on',c.dataset.p===PRIO)); }
@@ -493,16 +493,55 @@ drawTrips();
   const via=(t.name.match(/(?:\(por |· por )([^)]+)\)?$/)||[])[1]; t.name=(fn===tn?fn+' (dentro de la ciudad)':fn+' → '+tn)+(via?' · por '+cleanPlace(via):''); ch=true; }
   if(ch){ saveTrips(); drawTrips(); } })();
 
+// ---------- Modo viaje ----------
+let NAV=false, NAV_LIVE_BY_US=false, NAV_START=null;
+function navProgress(){ const r=ROUTES[SEL]; if(!r) return null;
+  const pos=ME?[ME.lat,ME.lon]:(carMarker?[carMarker.getLatLng().lat,carMarker.getLatLng().lng]:null); if(!pos) return null;
+  const done=progressKm(pos,lite(r))/1000, tot=r.distance/1000, left=Math.max(0,tot-done);
+  return {r,done,tot,left,secs:r.duration*(tot?left/tot:0)}; }
+function paintNav(){
+  if(!NAV) return; const p=navProgress(); if(!p){ $('navMain').textContent='Esperando GPS…'; $('navSub').textContent='Activa la ubicación para seguir el viaje'; $('navToll').textContent=''; return; }
+  const eta=new Date(Date.now()+p.secs*1000);
+  $('navMain').textContent=`${p.left.toFixed(p.left<10?1:0)} km · ${hm(p.secs)}`;
+  $('navSub').textContent=`Llegada ${eta.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})} · ${shortName(B||{label:'destino',lat:0,lon:0})}`;
+  const cat=$('cat').value, next=(p.r.hits||[]).find(h=>h.km>p.done+0.05);
+  if(next){ const pr=cat?priceOf(next.t,cat).v:null; $('navToll').textContent=`Próximo peaje: ${next.t.name} en ${(next.km-p.done).toFixed(1)} km${pr!=null?' · '+fmt(pr*1):''}`; }
+  else $('navToll').textContent=(p.r.hits||[]).length?'Ya pasaste todos los peajes de la ruta':'Sin peajes en esta ruta';
+}
+function startNav(){
+  if(!ROUTES.length) return;
+  NAV=true; NAV_START={t:Date.now(),seq:CALC_SEQ}; document.body.classList.add('nav','bigmap'); setTimeout(()=>map.invalidateSize(),280);
+  if(!LIVE && navigator.geolocation){ NAV_LIVE_BY_US=true; setLive(true); }
+  $('navbar').hidden=false; centerCar(); recordTrip(false); paintNav(); paintStartBtn();
+  scrollTo({top:0,behavior:'smooth'}); toast('Viaje iniciado');
+}
+function endNav(arrived){
+  if(!NAV) return; NAV=false;
+  const r=ROUTES[SEL]; const p=navProgress();
+  $('navbar').hidden=true; document.body.classList.remove('nav','bigmap'); setTimeout(()=>map.invalidateSize(),280);
+  setFollow(false);
+  if(NAV_LIVE_BY_US){ NAV_LIVE_BY_US=false; setLive(false); }
+  const mins=NAV_START?Math.round((Date.now()-NAV_START.t)/60000):0;
+  toast(arrived?`Llegaste · ${r?Math.round(r.distance/1000):'—'} km · ${mins} min de viaje`:`Viaje terminado${p?' · recorriste '+p.done.toFixed(1)+' km':''}`,5000);
+  paintStartBtn();
+  if(r){ const all=L.latLngBounds([]); all.extend(L.polyline(r.coords).getBounds()); map.fitBounds(all,{padding:[40,40]}); }
+}
+function paintStartBtn(){ const b=$('startnav'); if(!b) return; b.classList.toggle('endnav',NAV);
+  b.lastChild.textContent=NAV?'Terminar viaje':'Iniciar viaje'; }
+$('navEnd').onclick=()=>endNav(false);
+
 // ---------- Fuera de ruta → recalcular ----------
 let OFF=0, LAST_RR=0, REROUTING=false, ARRIVED=-1;
 function toast(msg,ms=3500){ const t=$('toast'); t.textContent=msg; t.hidden=false; clearTimeout(t._tm); t._tm=setTimeout(()=>t.hidden=true,ms); }
 function distToRoute(p,c){ let best=1e12; const step=c.length>4000?2:1; for(let i=step;i<c.length;i+=step){ const d=segDist(p,c[i-step],c[i])[0]; if(d<best) best=d; } return best; }
 function progressKm(p,c){ const cum=cumDist(c); let best=1e12, at=0; for(let i=1;i<c.length;i++){ const [d,f]=segDist(p,c[i-1],c[i]); if(d<best){best=d; at=cum[i-1]+f*(cum[i]-cum[i-1]);} } return at; }
 function checkOffRoute(lat,lon,acc){
-  if(!$('autorr').checked || !ROUTES.length || !B || REROUTING) return;
+  if(!ROUTES.length || !B || REROUTING) return;
+  if(hav([lat,lon],[B.lat,B.lon])<300 && NAV && ARRIVED!==CALC_SEQ){ ARRIVED=CALC_SEQ; endNav(true); return; }
+  if(!$('autorr').checked) return;
   const r=ROUTES[SEL]; if(!r) return;
   if(acc>120) return;                                   // GPS poco preciso: no decidir
-  if(hav([lat,lon],[B.lat,B.lon])<300){ if(ARRIVED!==CALC_SEQ){ ARRIVED=CALC_SEQ; toast('Llegaste a tu destino'); } return; }   // ya llegaste (aviso una vez por viaje)
+  if(hav([lat,lon],[B.lat,B.lon])<300){ if(ARRIVED!==CALC_SEQ){ ARRIVED=CALC_SEQ; if(NAV) endNav(true); else toast('Llegaste a tu destino'); } return; }   // ya llegaste (aviso una vez por viaje)
   const d=distToRoute([lat,lon],r.coords), lim=Math.max(120,acc*1.5);
   if(d<=lim){ OFF=0; return; }
   OFF++;
@@ -540,7 +579,7 @@ function carAtRouteStart(r){
 }
 $('geo').onclick=()=>locate(true);
 function setLive(on){ LIVE=on; try{localStorage.setItem('peajes_live',on?'1':'0');}catch(e){} paintLive();
-  if(on){ toast('Ubicación en vivo activada'); locate(false); } else { stopWatch(); setFollow(false); toast('Ubicación en vivo apagada: no se usa el GPS'); } }
+  if(on){ toast('Ubicación en vivo activada'); locate(false); } else { stopWatch(); setFollow(false); if(NAV&&!NAV_LIVE_BY_US){ NAV_LIVE_BY_US=false; endNav(false); } else toast('Ubicación en vivo apagada: no se usa el GPS'); } }
 $('fabLive').onclick=()=>setLive(!LIVE);
 // sin pantalla visible no tiene sentido leer GPS: se pausa y se reanuda solo
 document.addEventListener('visibilitychange',()=>{ if(document.hidden) stopWatch(); else if(LIVE&&ME) startWatch(); });
@@ -752,7 +791,7 @@ async function calc(opt={}){
     ROUTES.forEach(r=>{ if(!r.coords) r.coords=r.geometry.coordinates.map(c=>[c[1],c[0]]); });
     { const hb=markHabitual(); renderResults(hb>=0?hb:pickByPrio(),RR&&FOLLOW?false:true); PREFER=null; }
     if(ROUTES.some(r=>r.variant)) nameVariants(seq);
-    if(RR){ toast('Ruta recalculada desde tu ubicación'); if(FOLLOW&&ME) map.panTo([ME.lat,ME.lon]); }
+    if(RR){ toast('Ruta recalculada desde tu ubicación'); if(FOLLOW&&ME) map.panTo([ME.lat,ME.lon]); paintNav(); }
     if($('explore').checked && !hasStops() && !RR){
       const token=Symbol(); window._exTok=token;
       st('Buscando más rutas por otros corredores…');
@@ -806,10 +845,10 @@ function renderResults(sel,fit){
     m.on('click',()=>renderResults(i,false)); m.addTo(bubLayer); });
   if(fit===true){ setFollow(false); const all=L.latLngBounds([]); ROUTES.forEach(r=>all.extend(L.polyline(r.coords).getBounds())); map.fitBounds(all,{padding:[50,50]}); }
   else if(fit!==false && !FOLLOW) map.fitBounds(main.getBounds(),{padding:[40,40]});
-  $('startwrap').innerHTML=`<button class="startbtn" id="startnav"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 21 3l-8 18-2-8-8-2z"/></svg>${LIVE?'Iniciar y seguir el carro':'Activar en vivo y seguir el carro'}</button>
+  $('startwrap').innerHTML=`<button class="startbtn" id="startnav"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 21 3l-8 18-2-8-8-2z"/></svg><span>${NAV?'Terminar viaje':'Iniciar viaje'}</span></button>
     <div style="display:flex;gap:8px;margin-top:8px"><button class="chip" id="viewall" style="flex:1">Ver ruta completa</button><button class="chip" id="savetrip" style="flex:1">⭐ Guardar en Tus rutas</button></div>`;
-  $('startnav').onclick=()=>{ if(!LIVE && navigator.geolocation) setLive(true); centerCar(); recordTrip(false); };
-  $('savetrip').onclick=()=>recordTrip(true);
+  $('startnav').onclick=()=>{ if(NAV) endNav(false); else startNav(); };
+  $('savetrip').onclick=()=>recordTrip(true); paintStartBtn(); paintNav();
   $('viewall').onclick=()=>{ setFollow(false); map.fitBounds(main.getBounds(),{padding:[40,40]}); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); };
 
   $('routes').innerHTML=ROUTES.map((r,i)=>{

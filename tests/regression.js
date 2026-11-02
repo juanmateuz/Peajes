@@ -193,6 +193,25 @@ await p.click('#tripEdit'); await E(()=>{ document.querySelector('#trips [data-d
 await p.click('#tripEdit'); await E(()=>{ scrollTo(0,0); document.body.classList.remove('bigmap'); }); await p.waitForTimeout(300); 
 ok('Limpieza de nombres genéricos', await E(()=>cleanPlace('Perímetro Urbano Victoria')==='Victoria' && cleanPlace('Cabecera Municipal de Chinchiná')==='Chinchiná' && shortName({label:'Perímetro Urbano Manizales, Caldas',lat:5,lon:-75})==='Manizales'));
 ok('Borrar un viaje frecuente', await E(()=>TRIPS.length===1 && JSON.parse(localStorage.getItem('peajes_trips')).length===1));
+// --- Modo viaje
+await E(()=>{ map.closePopup(); setFollow(false); if(LIVE) setLive(false); V=null; EXTRA=[]; drawStopList(); document.getElementById('via').value='';
+  A={lat:4.6,lon:-74.1,label:'Bogotá'}; B={lat:6.25,lon:-75.57,label:'Medellín, Antioquia'}; document.getElementById('orig').value='Bogotá'; document.getElementById('dest').value='Medellín'; });
+await p.click('#go'); await p.waitForTimeout(1500); await E(()=>renderResults(0,false));
+await p.click('#startnav'); await p.waitForTimeout(800);
+ok('Iniciar viaje: barra visible, mapa grande, siguiendo', await E(()=>NAV && !document.getElementById('navbar').hidden && document.body.classList.contains('bigmap') && FOLLOW && LIVE));
+ok('Botón cambia a "Terminar viaje"', (await p.textContent('#startnav')).includes('Terminar viaje'));
+// simular avance por la ruta
+await E(()=>{ const c=ROUTES[SEL].coords; const q=c[Math.floor(c.length*0.1)]; ME={lat:q[0],lon:q[1]}; updateCar(q[0],q[1],null,15); paintNav(); });
+const nb=await p.textContent('#navbar');
+ok('Barra muestra km restantes, llegada y próximo peaje', /km ·/.test(nb) && nb.includes('Llegada') && /Próximo peaje: .+ en [\d.]+ km/.test(nb), nb.replace(/\s+/g,' '));
+await p.click('#navEnd'); await p.waitForTimeout(500);
+ok('Terminar: sale del modo viaje y apaga el GPS que prendió', await E(()=>!NAV && document.getElementById('navbar').hidden && !LIVE && watchId===null && !FOLLOW));
+ok('Botón vuelve a "Iniciar viaje"', (await p.textContent('#startnav')).includes('Iniciar viaje'));
+// llegada automática
+await p.click('#startnav'); await p.waitForTimeout(600);
+await E(()=>{ ARRIVED=-1; checkOffRoute(6.2502,-75.5702,10); });
+await p.waitForTimeout(300);
+ok('Al llegar al destino termina solo', await E(()=>!NAV) && (await p.textContent('#toast')).includes('Llegaste'));
 await E(()=>localStorage.setItem('peajes_trips',JSON.stringify([{id:'1',name:'Perímetro Urbano → Perímetro Urbano',from:{lat:4.6,lon:-74.1,label:'x'},to:{lat:6.25,lon:-75.57,label:'y'},stops:[],geom:[[4.6,-74.1],[6.25,-75.57]],km:415,count:3,last:1}])));
 await p.reload(); await p.waitForTimeout(4500);
 ok('Rutas guardadas con "Perímetro Urbano" se renombran solas', await E(()=>TRIPS[0].name==='Bogotá → Medellín' && TRIPS[0].count===3), await E(()=>TRIPS[0].name));
