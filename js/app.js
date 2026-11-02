@@ -18,6 +18,8 @@ const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>'
 
 // ---------- Mapa ----------
 const CAN_ROTATE=!!(L.Map.prototype.setBearing);
+// Con el dedo es normal moverse unos píxeles al tocar: hasta 12 px se considera toque, no arrastre (Leaflet usa 3)
+L.Draggable.prototype.options.clickTolerance=12;
 // Las líneas se dibujan con margen amplio: al girar, la pantalla rotada sigue dentro del área dibujada
 // y no hay que redibujar (evita que la ruta "salte" o se corte mientras se gira).
 const VEC=L.svg({padding:CAN_ROTATE?0.75:0.1});
@@ -291,6 +293,15 @@ function pointMenu(latlng){
     map.closePopup(); if(A&&B) $('go').click(); }),0);
 }
 map.on('contextmenu',e=>pointMenu(e.latlng));
+// Tocar cerca de una ruta (hasta 36 px) la selecciona, aunque no se le atine a la línea
+map.on('click',e=>{
+  if(ROUTES.length<2) return;
+  const tp=e.containerPoint; let best=-1, bd=36;
+  ROUTES.forEach((r,i)=>{ const c=lite(r); for(let k=1;k<c.length;k++){
+    const a=map.latLngToContainerPoint(c[k-1]), b=map.latLngToContainerPoint(c[k]);
+    const d=L.LineUtil.pointToSegmentDistance(tp,a,b); if(d<bd || (d===bd&&i!==SEL)){ bd=d; best=i; } } });
+  if(best>=0 && best!==SEL) renderResults(best,false);
+});
 $('swap').onclick=()=>{ [A,B]=[B,A]; const v=$('orig').value; $('orig').value=$('dest').value; $('dest').value=v; if(B&&B.isMe){ B={...B,isMe:false}; } drawPins(); };
 
 // ---------- Ubicación + carro ----------
@@ -369,7 +380,10 @@ let PRIO='fast';
 try{ const sp=localStorage.getItem('peajes_prio'); if(sp) PRIO=sp; }catch(e){}
 function paintPrio(){ document.querySelectorAll('#prio .chip').forEach(c=>c.classList.toggle('on',c.dataset.p===PRIO)); }
 paintPrio();
-document.querySelectorAll('#prio .chip').forEach(c=>c.onclick=()=>{ PRIO=c.dataset.p; paintPrio(); try{localStorage.setItem('peajes_prio',PRIO);}catch(e){} if(ROUTES.length) renderResults(pickByPrio(),true); });
+document.querySelectorAll('#prio .chip').forEach(c=>c.onclick=()=>{ PRIO=c.dataset.p; paintPrio(); try{localStorage.setItem('peajes_prio',PRIO);}catch(e){}
+  if(!ROUTES.length) return;
+  const fi=ROUTES.findIndex(r=>r.forced);
+  if(fi>=0){ renderResults(fi,false); toast('Tienes paradas: se mantiene la ruta por tus paradas'); } else renderResults(pickByPrio(),true); });
 function pickByPrio(){
   if(!ROUTES.length) return 0;
   const tol=+$('tol').value||120, cat=$('cat').value, gal=+$('gal').value, kmg=+$('kmg').value;
@@ -689,7 +703,7 @@ function renderResults(sel,fit){
   $('viewall').onclick=()=>{ setFollow(false); map.fitBounds(main.getBounds(),{padding:[40,40]}); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); };
 
   $('routes').innerHTML=ROUTES.map((r,i)=>{
-    const tags=(r.duration===fastest?'<span class="pill fast">Más rápida</span>':'')+(ROUTES.length>1&&r.distance===shortest?'<span class="pill short">Más corta</span>':'')+(ROUTES.length>1&&r.total===cheapest&&(r.tollCost!=null||r.fuel!=null)?'<span class="pill cheap">Más barata</span>':'');
+    const tags=(r.forced?'<span class="pill" style="background:#111318;color:#fff">Tus paradas</span>':'')+(r.duration===fastest?'<span class="pill fast">Más rápida</span>':'')+(ROUTES.length>1&&r.distance===shortest?'<span class="pill short">Más corta</span>':'')+(ROUTES.length>1&&r.total===cheapest&&(r.tollCost!=null||r.fuel!=null)?'<span class="pill cheap">Más barata</span>':'');
     return `<div class="rc ${i===SEL?'sel':''}" data-i="${i}">
       <div class="top"><div><div class="time">${hm(r.duration)}</div><div class="name">${esc(r.label)}${tags}</div></div>
       <div class="cost"><b>${fmt(r.fuel!=null?r.total:r.tollCost)}</b><span>${r.fuel!=null?'peajes + combustible':'en peajes'}${TRIP===2?' · ida y vuelta':''}</span></div></div>

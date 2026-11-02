@@ -163,6 +163,12 @@ await E(()=>{ for(let k=0;k<3;k++) EXTRA.push({lat:5+k*0.1,lon:-74.8,label:'x',e
 await E(()=>pointMenu(L.latLng(5.9,-75.2))); await p.waitForTimeout(150); await p.click('.leaflet-popup-content [data-w="V"]'); await p.waitForTimeout(300);
 ok('Límite de 4 paradas', await E(()=>1+EXTRA.length===4));
 await E(()=>{ EXTRA=[]; drawStopList(); V=null; document.getElementById('via').value=''; drawPins(); });
+// toque imperfecto con el dedo
+await E(()=>{ map.closePopup(); setFollow(false); renderResults(0,true); scrollTo(0,0); map.setBearing(15); }); await p.waitForTimeout(400);
+const tq=await E(()=>{ const c=ROUTES[1].coords; const q=c[Math.floor(c.length*0.5)]; const pp=map.latLngToContainerPoint(q); const r=map.getContainer().getBoundingClientRect(); return {x:r.left+pp.x+20,y:r.top+pp.y}; });
+await p.mouse.move(tq.x,tq.y); await p.mouse.down(); await p.mouse.move(tq.x+6,tq.y+5,{steps:3}); await p.mouse.up(); await p.waitForTimeout(400);
+ok('Toque imperfecto (se mueve 8 px, a 20 px de la línea) selecciona la ruta', await E(()=>SEL===1));
+await E(()=>map.setBearing(0));
 ok('Sin errores JS en todo el recorrido', errors.length===0, errors.join(' | '));
 console.log(results.join('\n'));console.log(`\n${results.filter(x=>x.startsWith('PASS')).length}/${results.length} pruebas OK · OSRM:${osrmCalls} Valhalla:${valhallaCalls} Photon:${photonCalls} Nominatim:${nomiCalls}`);
 await b.close();srv.close();})();
