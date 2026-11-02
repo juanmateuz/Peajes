@@ -128,6 +128,14 @@ await p.evaluate(()=>{ map.closePopup(); setFollow(false); renderResults(0,true)
 const tp=await E(()=>{ const c=ROUTES[1].coords; const q=c[Math.floor(c.length*0.5)]; const pp=map.latLngToContainerPoint(q); const r=map.getContainer().getBoundingClientRect(); return {x:r.left+pp.x+12,y:r.top+pp.y}; });
 await p.mouse.click(tp.x,tp.y); await p.waitForTimeout(300);
 ok('Tocar cerca de la línea alterna la selecciona', await E(()=>SEL===1));
+// "Pasar por aquí" desde el mapa debe usar el punto exacto
+let lastOsrm=''; p.on('request',rq=>{ if(rq.url().includes('project-osrm')) lastOsrm=rq.url(); });
+await E(()=>{ map.closePopup(); A={lat:4.6,lon:-74.1,label:'a'}; B={lat:6.25,lon:-75.57,label:'b'}; document.getElementById('orig').value='a'; document.getElementById('dest').value='b'; document.getElementById('via').value=''; V=null; });
+await E(()=>pointMenu(L.latLng(5.2237,-74.7702))); await p.waitForTimeout(150);
+await p.click('.leaflet-popup-content [data-w="V"]'); await p.waitForTimeout(1500);
+ok('Pasar por aquí (mapa) usa el punto exacto', await E(()=>V&&V.exact&&Math.abs(V.lat-5.2237)<1e-9) && /-74\.7702,5\.2237/.test(decodeURIComponent(await E(()=>performance.getEntriesByType('resource').map(e=>e.name).filter(n=>n.includes('project-osrm')).join(' ')))));
+ok('La ruta por el punto queda seleccionada', await E(()=>ROUTES[SEL].forced===true && ROUTES[SEL].label==='Por tu punto'));
+ok('Coordenadas escritas se respetan', await E(()=>{ const c=parseCoords('5.2237, -74.7702'); return c&&c.exact&&c.lon===-74.7702; }));
 ok('Sin errores JS en todo el recorrido', errors.length===0, errors.join(' | '));
 console.log(results.join('\n'));console.log(`\n${results.filter(x=>x.startsWith('PASS')).length}/${results.length} pruebas OK · OSRM:${osrmCalls} Valhalla:${valhallaCalls} Photon:${photonCalls} Nominatim:${nomiCalls}`);
 await b.close();srv.close();})();

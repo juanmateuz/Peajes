@@ -231,8 +231,12 @@ function setupAC(inp,box,which){
       box.hidden=!items.length||document.activeElement!==inp; }catch(e){ box.hidden=true; } },350); });
   document.addEventListener('click',ev=>{ if(!box.contains(ev.target)&&ev.target!==inp) box.hidden=true; });
 }
-async function geocode(q){ const it=(await photon(q,1))[0]; if(!it) throw new Error('No encontré “'+q+'”'); return {lat:it.lat,lon:it.lon,label:it.name+(it.detail?', '+it.detail:'')}; }
+// "5.2237, -74.7702" → punto exacto (no se busca como texto)
+function parseCoords(q){ const m=String(q).trim().match(/^(-?\d{1,2}(?:\.\d+)?)\s*[,; ]\s*(-?\d{1,3}(?:\.\d+)?)$/); if(!m) return null;
+  const lat=+m[1], lon=+m[2]; return (Math.abs(lat)<=90&&Math.abs(lon)<=180)?{lat,lon,label:lat.toFixed(4)+', '+lon.toFixed(4),picked:true,exact:true}:null; }
+async function geocode(q){ const pc=parseCoords(q); if(pc) return pc; const it=(await photon(q,1))[0]; if(!it) throw new Error('No encontré “'+q+'”'); return {lat:it.lat,lon:it.lon,label:it.name+(it.detail?', '+it.detail:'')}; }
 async function geocodeBest(q,a,b){
+  const pc=parseCoords(q); if(pc) return pc;
   const pad=.3, bb=[Math.min(a.lon,b.lon)-pad,Math.min(a.lat,b.lat)-pad,Math.max(a.lon,b.lon)+pad,Math.max(a.lat,b.lat)+pad].join(',');
   let d=await photon(q,15,bb); if(!d.length) d=await photon(q,15);
   if(!d.length) throw new Error('No encontré “'+q+'”');
@@ -255,7 +259,7 @@ function pointMenu(latlng){
     <button class="chip" data-w="A">● Salida</button><button class="chip" data-w="V">○ Pasar por aquí</button><button class="chip" data-w="B">■ Destino</button></div>`;
   const pop=L.popup({closeButton:false}).setLatLng(latlng).setContent(html).openOn(map);
   setTimeout(()=>pop.getElement().querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{
-    const w=b.dataset.w; setPoint(w,{...p}); $(w==='A'?'orig':w==='V'?'via':'dest').value=p.label; map.closePopup(); if(A&&B) $('go').click(); }),0);
+    const w=b.dataset.w; setPoint(w,{...p,picked:true,exact:true}); $(w==='A'?'orig':w==='V'?'via':'dest').value=p.label; map.closePopup(); if(A&&B) $('go').click(); }),0);
 }
 map.on('contextmenu',e=>pointMenu(e.latlng));
 $('swap').onclick=()=>{ [A,B]=[B,A]; const v=$('orig').value; $('orig').value=$('dest').value; $('dest').value=v; if(B&&B.isMe){ B={...B,isMe:false}; } drawPins(); };
@@ -580,15 +584,15 @@ async function calc(opt={}){
     if(!A&&$('orig').value.trim()) A=await geocode($('orig').value.trim());
     if(!B&&$('dest').value.trim()) B=await geocode($('dest').value.trim());
     if(!A||!B){ st('Indica origen y destino.','err'); return; }
-    if($('via').value.trim() && (!V || V.road || (!V.town && V.picked!==true))){
-      const q=(V&&V.q)||$('via').value.split(',')[0].trim();
+    if($('via').value.trim() && !(V&&V.exact) && (!V || V.road || (!V.town && V.picked!==true))){
+      const q=(V&&V.q)||(parseCoords($('via').value)?$('via').value.trim():$('via').value.split(',')[0].trim());
       V=await geocodeBest(q,A,B);
       if(!V.road) st(`Parada: <b>${esc(V.label)}</b>. Si no es el lugar que quieres, elígelo de la lista al escribir o mantén presionado el mapa.`);
       if(V.road) st(`Para “${esc(q)}” usé el tramo que mejor queda en tu camino. Si no es el que quieres, mantén presionado el mapa justo sobre la vía y elige <b>Pasar por aquí</b>.`);
     }
     drawPins(); if(!V) st('');
     let routes=[];
-    if(V){ const vr=await osrm(A,B,'',V); if(vr[0]) routes.push({...vr[0],label:'Por '+($('via').value.split(',')[0]||'tu parada'),forced:true}); }
+    if(V){ const vr=await osrm(A,B,'',V); if(vr[0]) routes.push({...vr[0],label:V.exact?'Por tu punto':'Por '+($('via').value.split(',')[0]||'tu parada'),forced:true}); }
     routes=routes.concat((await osrm(A,B)).map((r,i)=>({...r,label:i===0?'Ruta principal':'Alternativa '+i})));
     if($('avoid').checked){ try{ const nr=await osrm(A,B,'&exclude=toll'); if(nr[0]) routes.push({...nr[0],label:'Evitando peajes'}); }catch(e){} }
     if(seq!==CALC_SEQ) return;   // llegó un cálculo más nuevo
@@ -663,7 +667,7 @@ function renderResults(sel,fit){
       <div class="rtslot">${rtBar(r)}</div>
       ${r.missing?`<div class="warnline">${r.missing} peaje(s) sin tarifa para esta categoría</div>`:''}</div>`; }).join('');
   const forced=ROUTES.find(r=>r.forced), auto=ROUTES.find(r=>!r.forced);
-  if(forced&&auto&&forced.distance>auto.distance*1.25) $('routes').insertAdjacentHTML('afterbegin',`<div class="status err" style="margin:0 0 4px">La parada <b>“${esc($('via').value.split(',')[0])}”</b> agrega ${Math.round((forced.distance-auto.distance)/1000)} km de desvío: probablemente queda detrás de tu salida o fuera del camino. Elige un punto que esté <b>entre</b> la salida y el destino.</div>`);
+  if(forced&&auto&&forced.distance>auto.distance*1.25) $('routes').insertAdjacentHTML('afterbegin',`<div class="status err" style="margin:0 0 4px">La parada <b>“${esc(V&&V.exact?'tu punto':$('via').value.split(',')[0])}”</b> agrega ${Math.round((forced.distance-auto.distance)/1000)} km de desvío: probablemente queda detrás de tu salida o fuera del camino. Elige un punto que esté <b>entre</b> la salida y el destino.</div>`);
   $('routes').insertAdjacentHTML('beforeend',`<p class="foot" style="margin:2px 2px 0">Los tiempos son estimados sin tráfico. Si sabes que una vía es más fluida, escríbela en <b>“Pasar por”</b> para forzar la ruta.</p>`);
   $('routes').querySelectorAll('.rc').forEach(c=>c.onclick=()=>{ renderResults(+c.dataset.i,false); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); });
   if(s._rt){ setTimeout(()=>paintRoadTypes(SEL),0); } else { $('rtlegend').innerHTML='<span class="foot">Cargando tipo de vía…</span>'; paintRoadTypes(SEL); }
