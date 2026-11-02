@@ -258,16 +258,39 @@ $('swap').onclick=()=>{ [A,B]=[B,A]; const v=$('orig').value; $('orig').value=$(
 
 // ---------- Ubicación + carro ----------
 function bearing(a,b){ const r=Math.PI/180, y=Math.sin((b[1]-a[1])*r)*Math.cos(b[0]*r), x=Math.cos(a[0]*r)*Math.sin(b[0]*r)-Math.sin(a[0]*r)*Math.cos(b[0]*r)*Math.cos((b[1]-a[1])*r); return (Math.atan2(y,x)/r+360)%360; }
-function updateCar(lat,lon,heading){
-  let deg=heading;
-  if((deg==null||isNaN(deg)) && lastMe && hav(lastMe,[lat,lon])>8) deg=bearing(lastMe,[lat,lon]);
-  if(deg==null||isNaN(deg)) deg=carMarker?carMarker._deg:0;
-  lastMe=[lat,lon];
+// diferencia angular en (-180,180]
+const angDiff=(a,b)=>((b-a+540)%360)-180;
+function updateCar(lat,lon,heading,speed){
+  let raw=heading;
+  const slow=speed!=null && !isNaN(speed) && speed<1.5;          // < 5 km/h: el rumbo del GPS no es confiable
+  if((raw==null||isNaN(raw)) && lastMe && hav(lastMe,[lat,lon])>12) raw=bearing(lastMe,[lat,lon]);
+  const prev=carMarker&&carMarker._deg!=null?carMarker._deg:null;
+  let deg;
+  if(raw==null||isNaN(raw)||slow) deg=prev!=null?prev:0;            // detenido o sin dato: conservar rumbo
+  else if(prev==null) deg=raw;
+  else { const d=angDiff(prev,raw); deg=Math.abs(d)<4?prev:(prev+d*0.35+360)%360; }   // suavizado + zona muerta
+  if(!lastMe || hav(lastMe,[lat,lon])>3) lastMe=[lat,lon];        // punto previo para estimar rumbo
   if(!carMarker){ carMarker=L.marker([lat,lon],{icon:carIcon(deg),zIndexOffset:5000}).addTo(map); }
-  else { carMarker.setLatLng([lat,lon]); if(deg!==carMarker._deg) carMarker.setIcon(carIcon(deg)); }
+  else carMarker.setLatLng([lat,lon]);
   carMarker._deg=deg;
-  if(CAN_ROTATE&&HEADUP&&FOLLOW) map.setBearing(-deg); else refreshCarRot();
+  if(CAN_ROTATE&&HEADUP&&FOLLOW) animateBearing(-deg); else refreshCarRot();
 }
+// Giro animado del mapa hacia el rumbo objetivo (sin saltos)
+let BEAR_TARGET=null, BEAR_RAF=null;
+function animateBearing(target){
+  if(!CAN_ROTATE) return;
+  BEAR_TARGET=(target+360)%360;
+  if(BEAR_RAF) return;
+  const step=()=>{
+    const cur=map.getBearing(), d=angDiff(cur,BEAR_TARGET);
+    if(Math.abs(d)<0.3){ map.setBearing(BEAR_TARGET); BEAR_RAF=null; return; }
+    const mv=Math.sign(d)*Math.min(Math.abs(d)*0.12, 4);          // máx. 4° por cuadro, desacelera al llegar
+    map.setBearing((cur+mv+360)%360);
+    BEAR_RAF=requestAnimationFrame(step);
+  };
+  BEAR_RAF=requestAnimationFrame(step);
+}
+function stopBearingAnim(){ if(BEAR_RAF){ cancelAnimationFrame(BEAR_RAF); BEAR_RAF=null; } }
 function isSecure(){ return window.isSecureContext || location.protocol==='file:'; }
 function showHelp(kind){
   const b=$('helpbox');
@@ -290,7 +313,7 @@ function locate(asOrigin=true){
   st('Buscando tu ubicación…');
   navigator.geolocation.getCurrentPosition(pos=>{
     const {latitude:lat,longitude:lon,heading,accuracy}=pos.coords;
-    ME={lat,lon}; updateCar(lat,lon,heading);
+    ME={lat,lon}; updateCar(lat,lon,heading,pos.coords.speed);
     if(asOrigin){ A={lat,lon,label:'Mi ubicación',isMe:true}; $('orig').value='Mi ubicación'; drawPins();
       getJSON(`${NOMI}/reverse?format=json&accept-language=es&zoom=16&lat=${lat}&lon=${lon}`,{},8000).then(d=>{ if(d&&d.display_name&&A&&A.isMe) $('orig').value='Mi ubicación · '+d.display_name.split(',').slice(0,2).join(','); }).catch(()=>{}); }
     map.setView([lat,lon],Math.max(map.getZoom(),17));
@@ -303,8 +326,8 @@ let LIVE=false; try{ LIVE=localStorage.getItem('peajes_live')==='1'; }catch(e){}
 function paintLive(){ $('fabLive').classList.toggle('on',LIVE); $('liveTxt').textContent=LIVE?'En vivo':'En vivo: no'; }
 function stopWatch(){ if(watchId!=null){ navigator.geolocation.clearWatch(watchId); watchId=null; } }
 function startWatch(){ if(!LIVE) return; if(watchId!=null) return;
-  watchId=navigator.geolocation.watchPosition(p=>{ ME={lat:p.coords.latitude,lon:p.coords.longitude}; updateCar(ME.lat,ME.lon,p.coords.heading);
-    if(A&&A.isMe){ A.lat=ME.lat; A.lon=ME.lon; } if(FOLLOW) map.panTo([ME.lat,ME.lon],{animate:true}); checkOffRoute(ME.lat,ME.lon,p.coords.accuracy||50); },()=>{}, {enableHighAccuracy:true,maximumAge:5000}); }
+  watchId=navigator.geolocation.watchPosition(p=>{ ME={lat:p.coords.latitude,lon:p.coords.longitude}; updateCar(ME.lat,ME.lon,p.coords.heading,p.coords.speed);
+    if(A&&A.isMe){ A.lat=ME.lat; A.lon=ME.lon; } if(FOLLOW) map.panTo([ME.lat,ME.lon],{animate:true,duration:0.9,easeLinearity:1,noMoveStart:true}); checkOffRoute(ME.lat,ME.lon,p.coords.accuracy||50); },()=>{}, {enableHighAccuracy:true,maximumAge:5000}); }
 let PRIO='fast';
 try{ const sp=localStorage.getItem('peajes_prio'); if(sp) PRIO=sp; }catch(e){}
 function paintPrio(){ document.querySelectorAll('#prio .chip').forEach(c=>c.classList.toggle('on',c.dataset.p===PRIO)); }
@@ -375,7 +398,7 @@ function checkOffRoute(lat,lon,acc){
 }
 
 let FOLLOW=false;
-function setFollow(on){ FOLLOW=on; if(!on&&HEADUP){ HEADUP=false; if(CAN_ROTATE) map.setBearing(0); } $('fabLoc').classList.toggle('on',on); syncBubbles(); }
+function setFollow(on){ FOLLOW=on; if(!on&&HEADUP){ HEADUP=false; stopBearingAnim(); if(CAN_ROTATE) animateBearing(0); } $('fabLoc').classList.toggle('on',on); syncBubbles(); }
 function syncBubbles(){ const hide=FOLLOW||map.getZoom()>=15; if(hide&&map.hasLayer(bubLayer)) map.removeLayer(bubLayer); if(!hide&&!map.hasLayer(bubLayer)) map.addLayer(bubLayer); }
 map.on('zoomend',()=>syncBubbles());
 function centerCar(){
@@ -411,9 +434,10 @@ function paintCmp(){ if(!CAN_ROTATE) return; const b=map.getBearing(); const sho
   $('fabCmp').hidden=!show; $('cmpN').style.transform=`rotate(${b}deg)`; $('fabCmp').classList.toggle('hu',HEADUP); $('cmpTxt').textContent=HEADUP?'RUMBO':'N'; }
 if(CAN_ROTATE){
   map.on('rotate',()=>{ refreshCarRot(); paintCmp(); });
+  map.getContainer().addEventListener('touchstart',e=>{ if(e.touches.length>=2) stopBearingAnim(); },{passive:true});
   $('fabCmp').onclick=()=>{
-    if(HEADUP){ HEADUP=false; map.setBearing(0); toast('Norte arriba'); }
-    else if(FOLLOW&&carMarker){ HEADUP=true; map.setBearing(-(carMarker._deg||0)); toast('Dirección arriba: el mapa gira con tu rumbo'); }
+    if(HEADUP){ HEADUP=false; stopBearingAnim(); animateBearing(0); toast('Norte arriba'); }
+    else if(FOLLOW&&carMarker){ HEADUP=true; animateBearing(-(carMarker._deg||0)); toast('Dirección arriba: el mapa gira con tu rumbo'); }
     else { map.setBearing(0); }
     paintCmp(); };
 }

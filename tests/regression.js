@@ -106,7 +106,7 @@ await E(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>
 ok('GPS se reanuda al volver', await E(()=>watchId!==null));
 // --- brújula / rumbo
 await E(()=>{ carMarker._deg=60; }); await p.click('#fabCmp').catch(()=>{}); await E(()=>{ if(!HEADUP){ map.setBearing(5); } }); await p.waitForTimeout(200);
-if(!(await E(()=>HEADUP))) await p.click('#fabCmp');
+if(!(await E(()=>HEADUP))) await p.click('#fabCmp'); await p.waitForTimeout(1500);
 ok('Modo rumbo gira el mapa', await E(()=>HEADUP && Math.round(map.getBearing())===300));
 await p.click('#fabLive');await p.waitForTimeout(300);
 ok('Apagar En vivo detiene GPS y rumbo', await E(()=>!LIVE && watchId===null && !HEADUP));
