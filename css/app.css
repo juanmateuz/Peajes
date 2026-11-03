@@ -170,6 +170,18 @@ body.nav #toast{top:auto;bottom:40%}
 #fabLive.on{background:#fff}
 #fabLive.on .dotl{background:#0f9d6b;box-shadow:0 0 0 4px rgba(15,157,107,.18)}
 #fabBig{top:12px;left:12px;right:auto;display:none}
+#fabLayers{top:12px;left:12px;right:auto}
+@media(max-width:860px){ #fabLayers{top:64px} }
+#basemenu{position:absolute;left:64px;top:12px;z-index:600;background:#fff;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:6px;display:flex;flex-direction:column;gap:2px}
+@media(max-width:860px){ #basemenu{top:64px} }
+#basemenu[hidden]{display:none}
+#basemenu button{border:0;background:none;display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;font:600 13.5px Inter,system-ui;color:var(--ink);cursor:pointer;text-align:left}
+#basemenu button i{width:26px;height:26px;border-radius:7px;display:block;border:1px solid #d0d3da}
+#basemenu button.on{background:#eef3ff;color:#2f6bff}
+body.nav #fabLayers{display:none}
+/* mapa oscuro: controles a juego */
+body.darkmap .leaflet-control-attribution{background:rgba(20,22,27,.7)!important;color:#aab}
+body.darkmap .leaflet-control-attribution a{color:#cfd6e6}
 #fabCmp{top:100px;flex-direction:column;gap:0;font:700 9px Inter,system-ui;color:var(--ink2)}
 #fabCmp[hidden]{display:none}
 #fabCmp.hu{background:#111318;color:#fff}
