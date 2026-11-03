@@ -6,7 +6,7 @@ const results=[];const ok=(n,c,info='')=>{results.push((c?'PASS ':'FAIL ')+n+(in
 (async()=>{
 const b=await chromium.launch();const ctx=await b.newContext({viewport:{width:400,height:850},geolocation:{latitude:4.6,longitude:-74.1},permissions:['geolocation']});
 const p=await ctx.newPage();const errors=[];p.on('pageerror',e=>errors.push(e.message));
-let osrmCalls=0, valhallaCalls=0, nomiCalls=0, photonCalls=0, slowOsrm=false;
+let datosCalls=0, osrmCalls=0, valhallaCalls=0, nomiCalls=0, photonCalls=0, slowOsrm=false;
 const J=(r,o)=>r.fulfill({contentType:'application/json',body:JSON.stringify(o),headers:{'access-control-allow-origin':'*'}});
 await p.route('**/*',async r=>{const u=r.request().url();
  if(u.startsWith('http://localhost:8765'))return r.continue();
@@ -20,6 +20,13 @@ await p.route('**/*',async r=>{const u=r.request().url();
   {attributes:{OBJECTID:1,nombre:'AMAGÁ',cat_1:20600,cat_2:30000},geometry:{x:-74.5,y:4.75}},
   {attributes:{OBJECTID:2,nombre:'Tarapacá II',cat_1:17000,cat_2:25000},geometry:{x:-75.0,y:5.5}},
   {attributes:{OBJECTID:3,nombre:'Peaje Desconocido',cat_1:9000,cat_2:9000},geometry:{x:-74.3,y:4.675}}]});
+ if(u.includes('datos.gov.co/resource/8yi9-t44c')){ datosCalls++; return J(r,[
+   {peaje:'AMAGA',categoriatarifa:'I',desde:'2026-08-01T00:00:00.000',valortarifa:'25900'},
+   {peaje:'AMAGA',categoriatarifa:'I',desde:'2026-01-16T00:00:00.000',valortarifa:'20600'},
+   {peaje:'AMAGA',categoriatarifa:'II',desde:'2026-08-01T00:00:00.000',valortarifa:'36000'},
+   {peaje:'AMAGA',categoriatarifa:'IE',desde:'2026-08-01T00:00:00.000',valortarifa:'7000'},
+   {peaje:'TARAPACA II',categoriatarifa:'Categoría I',desde:'2026-08-01T00:00:00.000',valortarifa:'17800'}]); }
+ if(u.includes('datos.gov.co/resource/68qj-5xux')){ datosCalls++; return J(r,[{nombre_peaje:'PEAJE DESCONOCIDO',categoria_i:'9100',categoria_ii:'11000'}]); }
  if(u.includes('photon.komoot.io')){photonCalls++;const q=decodeURIComponent(u.split('q=')[1].split('&')[0]);
    const F=(lat,lon,name,key)=>({geometry:{coordinates:[lon,lat]},properties:{name,countrycode:'CO',state:'X',osm_key:key||'place'}});
    if(q.startsWith('Honda'))return J(r,{features:[F(5.0,-74.95,'Honda','waterway'),F(5.205,-74.74,'Honda','place')].map(f=>(f.properties.osm_value=f.properties.osm_key==='place'?'town':'stream',f))});
@@ -41,6 +48,8 @@ const E=f=>p.evaluate(f);
 // --- carga
 ok('Carga sin errores JS', errors.length===0, errors.join(' | '));
 ok('Peajes descargados del tablero', await E(()=>TOLLS.length)===3);
+await p.waitForTimeout(500);
+ok('Tarifas oficiales ANI/INVÍAS descargadas de datos.gov.co', datosCalls===2 && await E(()=>Object.keys(OFFICIAL).length>=3));
 ok('Categorías con nombre claro', (await p.textContent('#cat')).includes('Carro, campero o camioneta · Cat. I'));
 ok('Rotación disponible (SRI válido)', await E(()=>CAN_ROTATE));
 ok('No hay sonda a Nominatim al cargar', nomiCalls===0, 'llamadas='+nomiCalls);
@@ -59,7 +68,7 @@ await p.click('#go');await p.waitForTimeout(500);
 ok('Rutas calculadas', await E(()=>ROUTES.length)>=2);
 const tl=await p.textContent('#tl');
 ok('Amagá con tarifa verificada 25.900 (dato viejo visible)', tl.includes('$25.900') && tl.includes('datos: $20.600'));
-ok('Peaje sin verificar se estima en 17.500', await E(()=>ROUTES.some(r=>r.hits.some(h=>h.t.name==='Peaje Desconocido')))? tl.includes('$17.500') : true);
+ok('Peaje con tarifa oficial INVÍAS muestra $9.100', await E(()=>ROUTES.some(r=>r.hits.some(h=>h.t.name==='Peaje Desconocido')))? tl.includes('$9.100') : true);
 const sum=await p.textContent('#summary');
 const exp=await E(()=>{const s=ROUTES[SEL];return Math.round(s.distance/1000*2/40*16000 + s.hits.reduce((a,h)=>a+priceOf(h.t,'cat_1').v,0)*2)});
 ok('Resumen ida y vuelta cuadra', sum.replace(/\D/g,'').includes(String(exp)), 'esperado '+exp);
@@ -234,6 +243,15 @@ await p.click('#tabs [data-tab="ajustes"]'); ok('Pestaña Ajustes: todas las opc
 await p.click('#tabs [data-tab="info"]'); ok('Pestaña Info: consejos, datos y fuentes', await p.isVisible('.tipsl') && await p.isVisible('#opentbl') && await p.isVisible('#file'));
 await p.click('#go'); await p.waitForTimeout(1200); ok('Calcular vuelve a la pestaña Rutas', await E(()=>TAB==='rutas') && await p.isVisible('#routes'));
 ok('La pestaña elegida se recuerda', await E(()=>localStorage.getItem('peajes_tab')==='rutas'));
+// --- prioridad de fuentes
+await E(()=>{ document.getElementById('diff').checked=false; document.getElementById('cat').value='cat_1'; });
+ok('Oficial ANI: toma la tarifa más reciente (Amagá $25.900, no $20.600)', await E(()=>{ const p=priceOf(TOLLS.find(t=>t.name==='AMAGÁ'),'cat_1'); return p.v===25900 && p.e.official; }));
+ok('Oficial ANI también para Cat. II', await E(()=>{ const p=priceOf(TOLLS.find(t=>t.name==='AMAGÁ'),'cat_2'); return p.v===36000 && p.e.official; }));
+ok('Categorías especiales (IE) se ignoran', await E(()=>OFFICIAL[offKey('AMAGA')].cats[1].v===25900));
+ok('Oficial INVÍAS reemplaza el estimado', await E(()=>{ const p=priceOf(TOLLS.find(t=>t.name==='Peaje Desconocido'),'cat_1'); return p.v===9100 && p.e.official && !p.est; }));
+ok('Tarifa diferencial sigue aplicando sobre la oficial', await E(()=>{ document.getElementById('diff').checked=true; const v=priceOf(TOLLS.find(t=>t.name==='Tarapacá II'),'cat_1').v; document.getElementById('diff').checked=false; return v===700; }));
+ok('Prensa más reciente que el dato oficial gana', await E(()=>{ const t={name:'Fusca',attrs:{}}; OFFICIAL[offKey('Fusca')]={cats:{1:{v:15200,desde:'2026-01-16',src:'ANI'}}}; return priceOf(t,'cat_1').v===16100; }));
+ok('Info muestra estado de fuentes oficiales', (await p.textContent('#offinfo')).includes('ANI'));
 ok('Sin errores JS en todo el recorrido', errors.length===0, errors.join(' | '));
 console.log(results.join('\n'));console.log(`\n${results.filter(x=>x.startsWith('PASS')).length}/${results.length} pruebas OK · OSRM:${osrmCalls} Valhalla:${valhallaCalls} Photon:${photonCalls} Nominatim:${nomiCalls}`);
 await b.close();srv.close();})();

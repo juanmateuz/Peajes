@@ -65,57 +65,107 @@ const tollPin=(k,verified)=>L.divIcon({className:'',iconSize:[34,44],iconAnchor:
 const endIcon = b => L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,15],html:`<div style="width:30px;height:30px;display:grid;place-items:center"><div class="endpin ${b?'b':''}"></div></div>`});
 
 // Tarifas Cat. I verificadas en prensa/ANI (actualizado 1-nov-2026). Solo se aplican a Categoría I.
+// Tarifas Cat. I confirmadas en prensa/ANI (revisado 3-nov-2026). Solo Cat. I. iso = fecha de vigencia.
+// Las tarifas OFICIALES de datos.gov.co (ANI) tienen prioridad salvo que esta fecha sea más reciente.
 const VERIF=[
- {k:['la pintada'],v:23900,d:'16-ene-2026',src:'ANI / El Colombiano'},
- {k:['amaga'],v:25900,d:'16-jul-2026',src:'El Colombiano'},
- {k:['copacabana','guarne'],v:18500,d:'ene-2026',src:'El Colombiano',warn:'Cambió el operador (fin de Devimed, 31-jul-2026): confirmar'},
- {k:['tunel de oriente','tunel oriente'],v:26300,d:'17-ene-2026',src:'Gobernación de Antioquia'},
- {k:['variante palmas'],v:20200,d:'17-ene-2026',src:'Gobernación de Antioquia'},
- {k:['santa elena'],v:15100,d:'17-ene-2026',src:'Gobernación de Antioquia'},
- {k:['pajarito'],v:12900,d:'17-ene-2026',src:'Gobernación de Antioquia'},
- {k:['cisneros'],v:29400,d:'16-ene-2026',src:'ANI / Portafolio'},
- {k:['trapiche'],v:20300,d:'2026',src:'Portafolio'},
- {k:['aburra'],v:24909,d:'16-ene-2026',src:'El Colombiano'},
- {k:['santagueda'],v:16200,d:'9-ene-2026',src:'Portafolio'},
- {k:['pavas'],v:16200,d:'9-ene-2026',src:'Portafolio'},
- {k:['tarapaca ii','tarapaca 2'],v:17800,d:'9-ene-2026',src:'El Colombiano',diff:true},
- {k:['tarapaca i','tarapaca 1','tarapaca'],v:17800,d:'9-ene-2026',src:'El Colombiano',diff:true},
- {k:['circasia'],v:21200,d:'9-ene-2026',src:'El Colombiano',diff:true},
- {k:['el roble'],v:12400,d:'2026',src:'Portafolio'},
- {k:['gambote'],v:12600,d:'2026',src:'Portafolio'},
- {k:['loboguerrero'],v:12400,d:'2026',src:'Portafolio'},
- {k:['media canoa','mediacanoa'],v:13200,d:'2026',src:'Portafolio'},
- {k:['cencar'],v:13200,d:'2026',src:'Portafolio'},
- {k:['la gomez'],v:16300,d:'2026',src:'Portafolio'},
- {k:['los curos'],v:7600,d:'2026',src:'Portafolio'},
- {k:['puente amarillo'],v:14300,d:'2026',src:'Portafolio'},
- {k:['gualanday'],v:15300,d:'2026',src:'Portafolio'},
- {k:['mondonedo'],v:9900,d:'2026',src:'Portafolio'},
- {k:['pipiral'],v:29100,d:'16-ene-2026',src:'El Colombiano'},
- {k:['macheta'],v:27326,d:'16-ene-2026',src:'El Colombiano'},
- {k:['naranjal'],v:17026,d:'16-ene-2026',src:'El Colombiano'},
- {k:['boqueron'],v:19864,d:'16-ene-2026',src:'El Colombiano'},
- {k:['el placer'],v:20915,d:'16-ene-2026',src:'El Colombiano'},
- {k:['puerto berrio'],v:14083,d:'16-ene-2026',src:'El Colombiano'},
- {k:['fusca','andes','unisabana'],v:16100,d:'1-jul-2026',src:'Canal Trece'},
- {k:['albarracin'],v:12400,d:'15-ene-2026',src:'El Colombiano'},
- {k:['tuta'],v:12400,d:'15-ene-2026',src:'El Colombiano'},
- {k:['turbaco'],v:5800,d:'10-ene-2026',src:'El Colombiano'},
+ {k:['la pintada'],v:23900,iso:'2026-01-16',d:'16-ene-2026',src:'El Colombiano / ANI'},
+ {k:['amaga'],v:25900,iso:'2026-07-16',d:'16-jul-2026',src:'El Colombiano'},
+ {k:['copacabana','guarne'],v:18500,iso:'2026-01-01',d:'1-ene-2026',src:'El Colombiano',warn:'Cambió el operador (fin de Devimed, 31-jul-2026): confirmar'},
+ {k:['tunel de oriente','tunel oriente'],v:26300,iso:'2026-01-17',d:'17-ene-2026',src:'Gobernación de Antioquia'},
+ {k:['variante palmas'],v:20200,iso:'2026-01-17',d:'17-ene-2026',src:'Gobernación de Antioquia'},
+ {k:['santa elena'],v:15100,iso:'2026-01-17',d:'17-ene-2026',src:'Gobernación de Antioquia'},
+ {k:['pajarito'],v:12900,iso:'2026-01-17',d:'17-ene-2026',src:'Gobernación de Antioquia'},
+ {k:['cisneros'],v:29400,iso:'2026-01-16',d:'16-ene-2026',src:'ANI (Portafolio, El Colombiano)'},
+ {k:['trapiche'],v:20300,iso:'2026-01-16',d:'16-ene-2026',src:'ANI (Portafolio)'},
+ {k:['aburra'],v:24909,iso:'2026-01-16',d:'16-ene-2026',src:'El Colombiano'},
+ {k:['santagueda'],v:16200,iso:'2026-01-09',d:'9-ene-2026',src:'ANI (Portafolio)'},
+ {k:['pavas'],v:16200,iso:'2026-01-09',d:'9-ene-2026',src:'ANI (Portafolio)'},
+ {k:['tarapaca ii','tarapaca 2'],v:17800,iso:'2026-01-09',d:'9-ene-2026',src:'El Colombiano',diff:true},
+ {k:['tarapaca i','tarapaca 1','tarapaca'],v:17800,iso:'2026-01-09',d:'9-ene-2026',src:'El Colombiano',diff:true},
+ {k:['circasia'],v:21200,iso:'2026-01-09',d:'9-ene-2026',src:'El Colombiano',diff:true},
+ {k:['el roble'],v:12400,iso:'2026-01-15',d:'15-ene-2026',src:'ANI (Portafolio)'},
+ {k:['gambote'],v:12600,iso:'2026-01-10',d:'10-ene-2026',src:'ANI (Portafolio)'},
+ {k:['bayunca'],v:12600,iso:'2026-01-10',d:'10-ene-2026',src:'El Heraldo'},
+ {k:['pasacaballos'],v:12800,iso:'2026-01-10',d:'10-ene-2026',src:'El Heraldo / El Universal'},
+ {k:['turbaco'],v:5800,iso:'2026-01-10',d:'10-ene-2026',src:'El Heraldo'},
+ {k:['galapa'],v:10000,iso:'2026-01-10',d:'10-ene-2026',src:'El Heraldo'},
+ {k:['juan mina'],v:10000,iso:'2026-01-16',d:'16-ene-2026',src:'El Heraldo'},
+ {k:['puerto colombia'],v:20700,iso:'2026-01-16',d:'16-ene-2026',src:'El Heraldo'},
+ {k:['marahuaco'],v:22200,iso:'2026-01-16',d:'16-ene-2026',src:'El Universal'},
+ {k:['neiva'],v:18900,iso:'2026-01-16',d:'16-ene-2026',src:'ANI (Portafolio)'},
+ {k:['loboguerrero'],v:12400,iso:'2026-01-16',d:'2026',src:'Portafolio'},
+ {k:['media canoa','mediacanoa'],v:13200,iso:'2026-01-16',d:'2026',src:'ANI (Portafolio)'},
+ {k:['cencar'],v:13200,iso:'2026-01-16',d:'2026',src:'ANI (Portafolio)'},
+ {k:['la gomez'],v:16300,iso:'2026-01-16',d:'2026',src:'ANI (Portafolio)'},
+ {k:['los curos'],v:7600,iso:'2026-01-16',d:'2026',src:'ANI (Portafolio)'},
+ {k:['puente amarillo'],v:14300,iso:'2026-01-16',d:'2026',src:'Portafolio',warn:'Otra fuente reporta $5.800: confirmar'},
+ {k:['gualanday'],v:15300,iso:'2026-01-16',d:'2026',src:'ANI (Portafolio)'},
+ {k:['mondonedo'],v:9900,iso:'2026-01-16',d:'2026',src:'ANI (Portafolio)'},
+ {k:['pipiral'],v:29100,iso:'2026-01-16',d:'16-ene-2026',src:'El Colombiano'},
+ {k:['macheta'],v:27326,iso:'2026-01-16',d:'16-ene-2026',src:'El Colombiano'},
+ {k:['naranjal'],v:17026,iso:'2026-01-16',d:'16-ene-2026',src:'El Colombiano'},
+ {k:['boqueron'],v:19864,iso:'2026-01-16',d:'16-ene-2026',src:'El Colombiano'},
+ {k:['el placer'],v:20915,iso:'2026-01-16',d:'16-ene-2026',src:'El Colombiano'},
+ {k:['puerto berrio'],v:14083,iso:'2026-01-16',d:'16-ene-2026',src:'El Colombiano'},
+ {k:['fusca','andes','unisabana'],v:16100,iso:'2026-07-01',d:'1-jul-2026',src:'ANI (comparativo oficial)'},
+ {k:['albarracin'],v:12400,iso:'2026-01-15',d:'15-ene-2026',src:'El Colombiano'},
+ {k:['tuta'],v:12400,iso:'2026-01-15',d:'15-ene-2026',src:'El Colombiano'},
 ];
 const norm=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
 function verifOf(t){ if(t._vf!==undefined) return t._vf; const n=' '+norm(t.name)+' ';
   t._vf=VERIF.find(e=>e.k.some(k=>n.includes(' '+k+' ')))||null; return t._vf; }
 function isCatI(){ const f=FIELDS.find(x=>x.name===$('cat').value); return f&&catNum(f)===1; }
 // precio usado + info
+// Prioridad: oficial (ANI/INVÍAS, datos.gov.co) → verificada en prensa (si es más reciente, solo Cat. I) → tablero Supertransporte → estimado (solo Cat. I)
+function selCatNum(cat){ const f=FIELDS.find(x=>x.name===cat); return f?catNum(f):0; }
 function priceOf(t,cat){
   const raw=typeof t.attrs[cat]==='number'?t.attrs[cat]:null;
-  if(!isCatI()) return {v:raw,raw};
-  const e=verifOf(t);
-  if(!e){ const mode=$('unv')?$('unv').value:'est'; return mode==='est'?{v:UNV_EST,raw,est:true}:{v:raw,raw}; }
-  if(e.diff && $('diff') && $('diff').checked) return {v:700,raw,e,isDiff:true};
-  return {v:e.v,raw,e};
+  const n=selCatNum(cat), of=officialOf(t), oc=of&&n?of.cats[n]:null, e=n===1?verifOf(t):null;
+  const diffOn=e&&e.diff&&$('diff')&&$('diff').checked;
+  if(diffOn) return {v:700,raw,e,isDiff:true};
+  if(oc && !(e && e.iso && e.iso>String(oc.desde).slice(0,10))) return {v:oc.v,raw,e:{src:oc.src+' · datos.gov.co',d:String(oc.desde).slice(0,10)||'2026',official:true}};
+  if(e) return {v:e.v,raw,e};
+  if(n!==1) return {v:raw,raw};
+  const mode=$('unv')?$('unv').value:'est'; return mode==='est'?{v:UNV_EST,raw,est:true}:{v:raw,raw};
 }
 const UNV_EST=17500;
+// ---------- Tarifas OFICIALES en vivo (datos.gov.co) ----------
+// ANI "Tráfico Vehicular ANI" (8yi9-t44c): peaje, categoriatarifa, desde, valortarifa → última tarifa vigente por categoría
+// INVÍAS "Peajes" (68qj-5xux): se aprovechan las columnas de tarifa por categoría si existen
+const DATOS='https://www.datos.gov.co/resource/';
+let OFFICIAL={}, OFF_INFO={ani:null,invias:null}, OFF_VER=0;   // OFF_VER invalida la memoria de coincidencias
+const ROMN={i:1,ii:2,iii:3,iv:4,v:5,vi:6,vii:7};
+function offKey(n){ return norm(n).replace(/\b(peaje|estacion|estación|de|del|la|el|los|las)\b/g,' ').replace(/\s+/g,' ').trim(); }
+function catOf(txt){ const t=norm(txt).replace(/categoria|cat\.?/g,'').trim(); if(/e$|esp|difer|eje|rem|gru|can/.test(t)) return 0;
+  const m=t.match(/^(vii|vi|iv|v|iii|ii|i|[1-7])$/); if(!m) return 0; return ROMN[m[1]]||+m[1]; }
+function putOfficial(name,cat,val,desde,src){ if(!name||!cat||!(val>0)) return; const k=offKey(name); if(!k) return;
+  const o=OFFICIAL[k]||(OFFICIAL[k]={name,cats:{},src}); const prev=o.cats[cat];
+  if(!prev || String(desde||'')>String(prev.desde||'')) o.cats[cat]={v:+val,desde:desde||'',src}; }
+async function loadOfficial(force){
+  try{ if(!force){ const c=JSON.parse(localStorage.getItem('peajes_official')||'null'); if(c&&Date.now()-c.t<3*864e5){ OFFICIAL=c.o; OFF_INFO=c.i; OFF_VER++; paintOffInfo(); refreshPrices(); return; } } }catch(e){}
+  OFFICIAL={};
+  try{
+    const since=(new Date().getFullYear()-1)+'-12-01T00:00:00';
+    const url=DATOS+'8yi9-t44c.json?'+new URLSearchParams({'$select':'peaje,categoriatarifa,desde,valortarifa','$where':`desde >= '${since}'`,'$order':'desde DESC','$limit':'50000'});
+    const rows=await getJSON(url,{},25000); let n=0, last='';
+    for(const r of rows){ const c=catOf(r.categoriatarifa); if(!c) continue; putOfficial(r.peaje,c,+r.valortarifa,r.desde,'ANI'); n++; if(String(r.desde)>last) last=String(r.desde); }
+    OFF_INFO.ani={peajes:Object.keys(OFFICIAL).length, hasta:last.slice(0,10)};
+  }catch(e){ OFF_INFO.ani={error:e.message}; }
+  try{
+    const rows=await getJSON(DATOS+'68qj-5xux.json?$limit=5000',{},20000); let k0=0;
+    for(const r of rows){ const keys=Object.keys(r); const nk=keys.find(k=>/peaje|nombre|estacion/i.test(k)&&typeof r[k]==='string'); if(!nk) continue;
+      for(const k of keys){ const c=catNum({name:k,alias:k}); const v=numOr(r[k]); if(c && typeof v==='number' && v>=500){ putOfficial(r[nk],c,v,(r.fecha||r.vigencia||'2026-01-16'),'INVÍAS'); k0++; } } }
+    OFF_INFO.invias={valores:k0, filas:rows.length};
+  }catch(e){ OFF_INFO.invias={error:e.message}; }
+  try{ localStorage.setItem('peajes_official',JSON.stringify({t:Date.now(),o:OFFICIAL,i:OFF_INFO})); }catch(e){}
+  OFF_VER++; paintOffInfo(); refreshPrices();
+}
+function refreshPrices(){ if(TOLLS.length) drawTolls(); if(ROUTES.length) renderResults(); }
+function officialOf(t){ if(t._ofv===OFF_VER) return t._of; t._ofv=OFF_VER; const k=offKey(t.name); let o=OFFICIAL[k];
+  if(!o && k.length>=4){ const ks=Object.keys(OFFICIAL); const hit=ks.find(x=>x.length>=4 && ((' '+x+' ').includes(' '+k+' ')||(' '+k+' ').includes(' '+x+' '))); if(hit) o=OFFICIAL[hit]; }
+  t._of=o||null; return t._of; }
+function paintOffInfo(){ const el=$('offinfo'); if(!el) return; const a=OFF_INFO.ani, i=OFF_INFO.invias;
+  el.innerHTML=`<b>Tarifas oficiales en vivo:</b> ANI ${a?(a.error?'no disponible ('+esc(a.error)+')':a.peajes+' peajes, datos hasta '+esc(a.hasta)):'cargando…'} · INVÍAS ${i?(i.error?'no disponible':(i.valores?i.valores+' valores':'sin columnas de tarifa')):'cargando…'}. Fuente: datos.gov.co.`; }
 let V=null;          // parada principal (campo "Pasar por")
 let EXTRA=[];        // paradas adicionales (desde el mapa)
 const MAX_STOPS=4;
@@ -211,7 +261,7 @@ function drawTolls(){ tollLayer.clearLayers(); TOLLS.forEach(t=>L.circleMarker([
 function popup(t){
   const rows=Object.entries(t.attrs).filter(([k,v])=>v!==null&&v!==''&&!/objectid|shape|globalid/i.test(k)).slice(0,20)
     .map(([k,v])=>{ const f=FIELDS.find(x=>x.name===k); return `<tr><th>${esc((f&&f.alias)||k)}</th><td>${typeof v==='number'&&v>=1000?v.toLocaleString('es-CO'):esc(v)}</td></tr>`; }).join('');
-  let price=''; try{ const cat=$('cat').value; if(cat){ const p=priceOf(t,cat); price=`<div style="margin:6px 0 2px;font-size:18px;font-weight:700">${fmt(p.v)} <span style="font-size:11px;font-weight:500;color:${p.e?'#0f9d6b':p.est?'#c26a00':'#8a8f9c'}">${p.e?'✓ verificado '+esc(p.e.d):p.est?'estimado':'dato del tablero'}</span></div>`; } }catch(e){}
+  let price=''; try{ const cat=$('cat').value; if(cat){ const p=priceOf(t,cat); price=`<div style="margin:6px 0 2px;font-size:18px;font-weight:700">${fmt(p.v)} <span style="font-size:11px;font-weight:500;color:${p.e?'#0f9d6b':p.est?'#c26a00':'#8a8f9c'}">${p.e?(p.e.official?'✓ oficial '+esc(p.e.src.split(' ')[0])+' '+esc(p.e.d):'✓ verificado '+esc(p.e.d)):p.est?'estimado':'dato del tablero'}</span></div>`; } }catch(e){}
   return `<b style="font-size:13.5px">${esc(t.name)}</b>${price}<details><summary style="font-size:11.5px;color:#8a8f9c;cursor:pointer">Ver todos los datos</summary><table>${rows}</table></details>`;
 }
 async function boot(force=false){
@@ -881,7 +931,7 @@ function renderResults(sel,fit){
   const s=ROUTES[SEL];
   L.polyline(s.coords,{color:'#0b2e8a',weight:10,opacity:.9,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
   const main=L.polyline(s.coords,{color:'#2f6bff',weight:7,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
-  s.hits.forEach((h,k)=>L.marker([h.t.lat,h.t.lon],{icon:tollPin(k+1,!!(isCatI()&&verifOf(h.t))),zIndexOffset:500}).bindPopup(popup(h.t)).addTo(routeLayer));
+  s.hits.forEach((h,k)=>L.marker([h.t.lat,h.t.lon],{icon:tollPin(k+1,!!priceOf(h.t,$('cat').value).e),zIndexOffset:500}).bindPopup(popup(h.t)).addTo(routeLayer));
   carAtRouteStart(s);
   if(NAV) setTimeout(paintDone,0);
   // burbujas para elegir en el mapa
@@ -924,7 +974,7 @@ function renderResults(sel,fit){
   if(!s.hits.length) tl+=`<p class="foot">${TOLLS.length?'No se detectaron peajes a menos de '+tol+' m de esta ruta.':'Aún no hay datos de peajes cargados.'}</p>`;
   else tl+=s.hits.map((x,k)=>`<div class="ti" data-k="${k}"><div class="n"><b>P</b></div><div><div class="nm">${esc(x.t.name)}</div><div class="sm">km ${x.km.toFixed(0)}${x.dup?' · '+x.dup+' casetas':''}${x.again?' · pasas 2 veces':''}${x.dist>60?' · a '+Math.round(x.dist)+' m de la vía':''}</div></div><div class="pr">${(()=>{ const p=priceOf(x.t,cat); if(p.est) return `${fmt(p.v)}<div class="sm" style="text-align:right;color:var(--warn)">estimado${p.raw!=null?' · datos: '+fmt(p.raw):''}</div>`;
     if(!p.e) return fmt(p.v)+'<div class="sm" style="text-align:right">sin verificar</div>';
-    const chg=p.raw!=null&&p.raw!==p.v; return `${fmt(p.v)} <span title="${esc(p.e.src+' · '+p.e.d)}" style="color:var(--ok)">✓</span><div class="sm" style="text-align:right">${p.isDiff?'diferencial':esc(p.e.d)}${chg?' · datos: '+fmt(p.raw):''}</div>${p.e.warn?'<div class="sm" style="color:var(--warn);text-align:right;max-width:150px">'+esc(p.e.warn)+'</div>':''}`; })()}</div></div>`).join('')+`<div class="total"><span>Total peajes</span><span>${fmt(s.tollCost)}</span></div><p class="foot">✓ = tarifa Cat. I verificada en ANI o prensa (fecha al lado). <span style="color:var(--warn)">estimado</span> = peaje sin tarifa confirmada, calculado a $17.500. “sin verificar” = valor del tablero de Supertransporte. ${isCatI()?'':'<b>Las tarifas verificadas solo aplican a Cat. I.</b>'}</p>`;
+    const chg=p.raw!=null&&p.raw!==p.v; return `${fmt(p.v)} <span title="${esc(p.e.src+' · '+p.e.d)}" style="color:var(--ok)">✓</span><div class="sm" style="text-align:right">${p.isDiff?'diferencial':(p.e.official?'oficial '+esc(p.e.src.split(' ')[0])+' · ':'')+esc(p.e.d)}${chg?' · datos: '+fmt(p.raw):''}</div>${p.e.warn?'<div class="sm" style="color:var(--warn);text-align:right;max-width:150px">'+esc(p.e.warn)+'</div>':''}`; })()}</div></div>`).join('')+`<div class="total"><span>Total peajes</span><span>${fmt(s.tollCost)}</span></div><p class="foot">✓ oficial = tarifa de la ANI o el INVÍAS en datos.gov.co (todas las categorías). ✓ con fecha = verificada en prensa (Cat. I). <span style="color:var(--warn)">estimado</span> = peaje sin tarifa confirmada, calculado a $17.500. “sin verificar” = valor del tablero de Supertransporte. ${isCatI()?'':'<b>Las tarifas verificadas solo aplican a Cat. I.</b>'}</p>`;
   $('tl').innerHTML=tl;
   $('tollBadge').hidden=!s.hits.length; $('tollBadge').textContent=s.hits.length; $('norutes').hidden=true;
   $('tl').querySelectorAll('.ti').forEach(e=>e.onclick=()=>{ const x=s.hits[+e.dataset.k]; map.setView([x.t.lat,x.t.lon],17); if(innerWidth<860) scrollTo({top:0,behavior:'smooth'}); });
@@ -946,6 +996,7 @@ setupAC($('orig'),$('sorig'),'A'); setupAC($('via'),$('svia'),'V'); $('viaclr').
 $('file').onchange=async e=>{ const f=e.target.files[0]; if(!f) return; const t=await f.text();
   try{ const d=/\.csv$/i.test(f.name)?parseCSV(t):parseGeoJSON(JSON.parse(t)); if(!d.tolls.length) throw new Error('sin puntos'); applyData(d); }catch(err){ st('No pude leer el archivo: '+esc(err.message),'err'); } };
 $('reload').onclick=()=>boot(true);
+$('reloadOff').onclick=()=>{ $('offinfo').textContent='Actualizando tarifas oficiales…'; loadOfficial(true); };
 function visibleFields(){ return FIELDS.filter(f=>!/^(objectid|fid|shape|globalid|shape_.*)$/i.test(f.name) && TOLLS.some(t=>t.attrs[f.name]!=null&&t.attrs[f.name]!=='')); }
 function fmtCell(v,f){ if(v==null) return ''; if(/Date/.test(f.type)&&typeof v==='number') return new Date(v).toISOString().slice(0,10); return typeof v==='number'&&v>=1000?v.toLocaleString('es-CO'):String(v); }
 function tableCSV(rows){ const fs=visibleFields(); const q=x=>{ x=x==null?'':String(x); return /[;"\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x; };
@@ -967,4 +1018,4 @@ $('dq').oninput=renderTbl;
 $('dcopy').onclick=()=>copyText(tableCSV(renderTbl()),$('dcopy'));
 $('copyall').onclick=()=>{ if(!TOLLS.length){ st('Aún no hay datos cargados.','err'); return; } copyText(tableCSV(TOLLS),$('copyall')); };
 $('verifl').innerHTML=VERIF.map(e=>`${esc(e.k[0].replace(/\b\w/g,c=>c.toUpperCase()))}: <b>${fmt(e.v)}</b> · ${esc(e.d)} · ${esc(e.src)}${e.warn?' · ⚠ '+esc(e.warn):''}`).join('<br>')+'<br><i>Actualizado el 1-nov-2026. Confirma antes de viajar.</i>';
-boot();
+boot(); loadOfficial(); paintOffInfo();

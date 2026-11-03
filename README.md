@@ -26,7 +26,9 @@ tests/regression.js   Pruebas de regresión (Playwright, servicios simulados)
 ## Servicios externos (gratuitos, uso razonable)
 | Uso | Servicio |
 |---|---|
-| Peajes | Tablero público de Supertransporte (ArcGIS) |
+| Peajes (ubicación) | Tablero público de Supertransporte (ArcGIS) |
+| Tarifas oficiales ANI | datos.gov.co — "Tráfico Vehicular ANI" (8yi9-t44c): última tarifa vigente por peaje y categoría |
+| Tarifas INVÍAS | datos.gov.co — "Peajes" INVÍAS (68qj-5xux), si trae columnas de tarifa; Resolución INVÍAS 0062 de 15-ene-2026 como referencia |
 | Rutas | OSRM (servidor demo público) |
 | Búsqueda / autocompletado | Photon (komoot) |
 | Nombre de lugares | Nominatim (solo consultas puntuales; su política prohíbe autocompletado) |
@@ -37,7 +39,9 @@ tests/regression.js   Pruebas de regresión (Playwright, servicios simulados)
 Si un servicio falla, la función correspondiente se desactiva sin romper el resto.
 
 ## Mantenimiento de tarifas
-Las tarifas verificadas están en `js/app.js`, constante `VERIF` (nombre normalizado, valor Cat. I, fecha y fuente). Actualizarlas cada vez que cambien (normalmente en enero). Los peajes sin tarifa verificada se estiman en $17.500 (configurable en la página).
+Prioridad de fuentes: **oficial (datos.gov.co)** → verificada en prensa si es más reciente (constante `VERIF`, solo Cat. I) → tablero de Supertransporte → estimado.
+Las tarifas oficiales se descargan solas (caché de 3 días; botón *Actualizar tarifas oficiales* en Info).
+Las tarifas verificadas en prensa están en `js/app.js`, constante `VERIF` (nombre normalizado, valor Cat. I, fecha y fuente). Actualizarlas cada vez que cambien (normalmente en enero). Los peajes sin tarifa verificada se estiman en $17.500 (configurable en la página).
 
 ## Pruebas
 ```

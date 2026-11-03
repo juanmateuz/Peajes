@@ -123,7 +123,9 @@
     <div class="lbl">Datos y fuente</div>
     <div id="meta" class="foot">—</div>
     <p style="display:flex;gap:6px;flex-wrap:wrap"><button class="chip" id="opentbl">📋 Ver todos los datos del tablero</button><button class="chip" id="copyall">Copiar datos para Claude</button></p>
-    <details style="margin:8px 0"><summary style="font-size:12px">Ver tarifas verificadas (Cat. I)</summary><div id="verifl" class="foot"></div></details>
+    <p class="foot" id="offinfo">Tarifas oficiales en vivo: cargando…</p>
+    <p><button class="chip" id="reloadOff">Actualizar tarifas oficiales</button></p>
+    <details style="margin:8px 0"><summary style="font-size:12px">Ver tarifas verificadas en prensa (Cat. I)</summary><div id="verifl" class="foot"></div></details>
     <p class="foot">Si la descarga automática falla, carga un GeoJSON o CSV de peajes con latitud/longitud:</p>
     <input type="file" id="file" accept=".geojson,.json,.csv" style="font-size:12px">
     <p><button class="chip" id="reload">Volver a descargar</button></p>
