@@ -179,6 +179,9 @@ body.nav #toast{top:auto;bottom:40%}
 #basemenu button i{width:26px;height:26px;border-radius:7px;display:block;border:1px solid #d0d3da}
 #basemenu button.on{background:#eef3ff;color:#2f6bff}
 body.nav #fabLayers{display:none}
+/* mapa oscuro: invertir colores del mapa claro (calles grises, fondo casi negro, agua azul oscuro) */
+.tiles-dark{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.55)}
+body.darkmap #map{background:#15171c}
 /* mapa oscuro: controles a juego */
 body.darkmap .leaflet-control-attribution{background:rgba(20,22,27,.7)!important;color:#aab}
 body.darkmap .leaflet-control-attribution a{color:#cfd6e6}

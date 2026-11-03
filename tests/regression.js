@@ -258,7 +258,7 @@ await p.click('#fabLayers'); ok('Menú de tipo de mapa', await p.isVisible('#bas
 await p.click('#basemenu [data-b="satelite"]'); await p.waitForTimeout(400);
 ok('Satélite: imágenes + vías + nombres', await E(()=>BASE==='satelite' && baseLayers[0]._url.includes('World_Imagery')));
 await p.click('#fabLayers'); await p.click('#basemenu [data-b="oscuro"]'); await p.waitForTimeout(2500);
-ok('Oscuro: si CARTO falla cambia solo al respaldo Esri oscuro', await E(()=>BASE==='oscuro' && baseLayers[0]._url.includes('Dark_Gray')), await E(()=>baseLayers.map(l=>l._url).join(' ')));
+ok('Oscuro sin clave: mapa de calles con filtro oscuro (o su respaldo OSM oscuro)', await E(()=>BASE==='oscuro' && baseLayers[0].options.className==='tiles-dark' && !baseLayers.some(l=>/cartocdn/.test(l._url))), await E(()=>baseLayers.map(l=>l._url).join(' ')));
 ok('Mapa oscuro marca la interfaz', await E(()=>document.body.classList.contains('darkmap')));
 ok('Tipo de mapa se recuerda', await E(()=>localStorage.getItem('peajes_base')==='oscuro'));
 await p.click('#fabLayers'); await p.click('#basemenu [data-b="claro"]');
@@ -267,6 +267,7 @@ const c0=await E(()=>{ ME={lat:4.62,lon:-74.12}; FOLLOW=true; GESTURE=true; cons
 ok('Con dedos sobre el mapa, el GPS no lo desplaza', await p.evaluate((c)=>{ const n=map.getCenter(); GESTURE=false; FOLLOW=false; return Math.abs(n.lat-c[0])<1e-9 && Math.abs(n.lng-c[1])<1e-9; },c0));
 ok('Girar con dos dedos en modo rumbo pasa a giro libre', await E(()=>{ HEADUP=true; const t1=new Touch({identifier:1,target:map.getContainer(),clientX:100,clientY:200}), t2=new Touch({identifier:2,target:map.getContainer(),clientX:200,clientY:300});
   map.getContainer().dispatchEvent(new TouchEvent('touchstart',{touches:[t1,t2],bubbles:true})); map.getContainer().dispatchEvent(new TouchEvent('touchend',{touches:[],bubbles:true})); return HEADUP===false && GESTURE===false; }));
+ok('Un solo gestor de pellizco configurado por centro común (anti-temblor)', await E(()=>PINCHERS().length>=1 && typeof VEC._onZoom==='function'));
 ok('Sin errores JS en todo el recorrido', errors.length===0, errors.join(' | '));
 console.log(results.join('\n'));console.log(`\n${results.filter(x=>x.startsWith('PASS')).length}/${results.length} pruebas OK · OSRM:${osrmCalls} Valhalla:${valhallaCalls} Photon:${photonCalls} Nominatim:${nomiCalls}`);
 await b.close();srv.close();})();

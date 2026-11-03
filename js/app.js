@@ -23,6 +23,10 @@ L.Draggable.prototype.options.clickTolerance=12;
 // Las líneas se dibujan con margen amplio: al girar, la pantalla rotada sigue dentro del área dibujada
 // y no hay que redibujar (evita que la ruta "salte" o se corte mientras se gira).
 const VEC=L.svg({padding:CAN_ROTATE?0.75:0.1});
+// Durante el pellizco Leaflet ESTIRA el dibujo (escala CSS) y lo redibuja al soltar: eso se ve como un salto.
+// Aquí se redibujan las líneas en cada cuadro del zoom, con su grosor real y en su posición exacta.
+VEC._onZoom=function(){ if(this._zRaf) return; this._zRaf=requestAnimationFrame(()=>{ this._zRaf=null; if(!this._map) return;
+  this._update(); for(const id in this._layers){ const l=this._layers[id]; l._project(); l._update(); } }); };
 const map = L.map('map',CAN_ROTATE?{zoomControl:false,rotate:true,touchRotate:true,shiftKeyRotate:true,bearing:0,rotateControl:false,renderer:VEC}:{zoomControl:false,renderer:VEC}).setView([4.6,-74.1],6);
 L.control.zoom({position:'topright'}).addTo(map);
 const ESRI='https://server.arcgisonline.com/ArcGIS/rest/services/';
@@ -31,8 +35,9 @@ const TILE=(u,o)=>L.tileLayer(u,{maxZoom:19,keepBuffer:4,...o});
 const BASES={
   claro:   {n:'Claro',    main:()=>[TILE(ESRI+'World_Street_Map/MapServer/tile/{z}/{y}/{x}',{attribution:'Mapa © Esri, HERE, Garmin, OpenStreetMap'})],
             alt:()=>[TILE('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'})]},
-  oscuro:  {n:'Oscuro',   main:()=>[TILE('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:20,attribution:'© OpenStreetMap © CARTO'})],
-            alt:()=>[TILE(ESRI+'Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',{maxZoom:16,attribution:'© Esri'}),TILE(ESRI+'Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',{maxZoom:16})]},
+  // Oscuro sin clave: el mapa de calles de Esri con filtro de color (conserva calles, edificios y nombres)
+  oscuro:  {n:'Oscuro',   main:()=>[TILE(ESRI+'World_Street_Map/MapServer/tile/{z}/{y}/{x}',{className:'tiles-dark',attribution:'Mapa © Esri, HERE, Garmin, OpenStreetMap'})],
+            alt:()=>[TILE('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{className:'tiles-dark',attribution:'© OpenStreetMap'})]},
   satelite:{n:'Satélite', main:()=>[TILE(ESRI+'World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Imágenes © Esri, Maxar, Earthstar'}),TILE(ESRI+'Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',{}),TILE(ESRI+'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{})],
             alt:()=>[TILE(ESRI+'World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Imágenes © Esri'})]}
 };
@@ -368,6 +373,25 @@ function pointMenu(latlng){
 map.on('contextmenu',e=>pointMenu(e.latlng));
 // Mientras el usuario toca el mapa, la página NO lo desplaza ni lo gira (evita que la ruta "salte" durante el gesto)
 let GESTURE=false;
+function followCenter(z){ const ll=carMarker.getLatLng(); return NAV?lookAhead(ll.lat,ll.lng,carMarker._deg,z):ll; }
+// En modo seguir, el pellizco hace zoom alrededor del carro (no de los dedos): el carro queda quieto en pantalla
+map.getContainer().addEventListener('touchstart',()=>{ const f=(typeof FOLLOW!=='undefined'&&FOLLOW&&carMarker); map.options.touchZoom=f?'center':true; map.options.scrollWheelZoom=f?'center':true; },{passive:true,capture:true});
+// el gesto de pellizco lo maneja leaflet-rotate (touchGestures) o Leaflet (touchZoom), según esté disponible
+const pinchHandler=()=>map.touchGestures||map.touchZoom;
+
+// Hay dos gestores de pellizco activos: el de leaflet-rotate (touchGestures) y el TouchZoom original de Leaflet, que queda
+// registrado sin referencia. Apagarlo desordena los marcadores, así que se dejan ambos y se les da el MISMO centro.
+const PINCHERS=()=>[map.touchGestures,...(map._handlers||[]).filter(h=>h!==map.touchGestures&&h!==map.touchZoom&&typeof h._onTouchStart==='function'&&typeof h._onTouchMove==='function')].filter(Boolean);
+// Antes de que el gestor procese cada movimiento, se calcula el zoom que va a resultar y se fija el centro
+// para ESE zoom: así el carro no se desplaza ni un cuadro durante el pellizco.
+map.getContainer().addEventListener('touchmove',e=>{
+  if(!(typeof FOLLOW!=='undefined'&&FOLLOW&&carMarker&&e.touches.length===2)) return;
+  const a=e.touches[0], b=e.touches[1], dist=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY); if(!dist) return;
+  for(const h of PINCHERS()){ if(!h._startDist) continue;
+    const z=Math.max(map.getMinZoom(),Math.min(map.getMaxZoom(),map.getScaleZoom(dist/h._startDist,h._startZoom))); // zoom fraccionario real
+    h._startLatLng=followCenter(z); }
+},{passive:true,capture:true});
+map.on('zoomend',()=>{ if(typeof FOLLOW!=='undefined'&&FOLLOW&&carMarker&&!GESTURE) map.panTo(followCenter(),{animate:false}); });
 map.getContainer().addEventListener('touchstart',e=>{ GESTURE=true;
   if(e.touches.length>=2 && typeof HEADUP!=='undefined' && HEADUP){ HEADUP=false; if(typeof stopBearingAnim==='function') stopBearingAnim(); if(typeof paintCmp==='function') paintCmp(); } },{passive:true});
 const endGesture=e=>{ if(!e.touches||e.touches.length===0) GESTURE=false; };
@@ -403,8 +427,8 @@ function routeHeadingAt(p){
   return {deg:bearing(cur,c[k]), dist:best, pt:cur};
 }
 // Punto adelante del carro para que en modo viaje se vea más camino al frente (el carro queda más abajo)
-function lookAhead(lat,lon,deg){
-  const z=map.getZoom(), mpp=40075016*Math.cos(lat*Math.PI/180)/Math.pow(2,z+8), px=map.getSize().y*0.22;
+function lookAhead(lat,lon,deg,zz){
+  const z=zz!=null?zz:map.getZoom(), mpp=40075016*Math.cos(lat*Math.PI/180)/Math.pow(2,z+8), px=map.getSize().y*0.22;
   const q=destPt([lat,lon],deg||0,mpp*px); return L.latLng(q[0],q[1]);
 }
 function updateCar(lat,lon,heading,speed){
@@ -625,7 +649,9 @@ function paintNav(){
 }
 function startNav(){
   if(!ROUTES.length) return;
-  NAV=true; NAV_START={t:Date.now(),seq:CALC_SEQ}; document.body.classList.add('nav','bigmap'); setTimeout(()=>map.invalidateSize(),280);
+  NAV=true; NAV_START={t:Date.now(),seq:CALC_SEQ}; document.body.classList.add('nav','bigmap');
+  // al terminar de agrandarse el mapa, re-ubicar el carro con el tamaño final de pantalla
+  setTimeout(()=>{ map.invalidateSize(); if(FOLLOW&&carMarker) map.panTo(followCenter(),{animate:false}); },300);
   if(!LIVE && navigator.geolocation){ NAV_LIVE_BY_US=true; setLive(true); }
   $('navbar').hidden=false; centerCar(); recordTrip(false); paintNav(); paintStartBtn();
   scrollTo({top:0,behavior:'smooth'}); toast('Viaje iniciado');
