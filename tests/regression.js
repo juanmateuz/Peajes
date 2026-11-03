@@ -106,9 +106,10 @@ ok('GPS en pausa con pantalla oculta', await E(()=>watchId===null));
 await E(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>false});document.dispatchEvent(new Event('visibilitychange'));});
 ok('GPS se reanuda al volver', await E(()=>watchId!==null));
 // --- brújula / rumbo
-await E(()=>{ carMarker._deg=60; }); await p.click('#fabCmp').catch(()=>{}); await E(()=>{ if(!HEADUP){ map.setBearing(5); } }); await p.waitForTimeout(200);
-if(!(await E(()=>HEADUP))) await p.click('#fabCmp'); await p.waitForTimeout(1500);
-ok('Modo rumbo gira el mapa', await E(()=>HEADUP && Math.round(map.getBearing())===300));
+await p.waitForTimeout(300);
+ok('Iniciar viaje activa modo rumbo hacia la ruta', await E(()=>HEADUP && Math.abs(angDiff(map.getBearing(), -carMarker._deg))<2), await E(()=>HEADUP+' '+map.getBearing()+' '+carMarker._deg));
+await p.click('#fabCmp'); await p.waitForTimeout(1800);
+ok('Brújula vuelve a norte arriba', await E(()=>!HEADUP && Math.abs(angDiff(map.getBearing(),0))<1));
 await p.click('#fabLive');await p.waitForTimeout(300);
 ok('Apagar En vivo detiene GPS y rumbo', await E(()=>!LIVE && watchId===null && !HEADUP));
 // --- mapa grande
@@ -200,6 +201,9 @@ await p.click('#go'); await p.waitForTimeout(1500); await E(()=>renderResults(0,
 await p.click('#startnav'); await p.waitForTimeout(800);
 ok('Iniciar viaje: barra visible, mapa grande, siguiendo', await E(()=>NAV && !document.getElementById('navbar').hidden && document.body.classList.contains('bigmap') && FOLLOW && LIVE));
 ok('Botón cambia a "Terminar viaje"', (await p.textContent('#startnav')).includes('Terminar viaje'));
+ok('Carro apunta hacia adelante de la ruta aunque el GPS diga lo contrario', await E(()=>{ const c=ROUTES[SEL].coords; const q=c[Math.floor(c.length*0.05)]; const rh=routeHeadingAt(q).deg;
+  for(let k=0;k<6;k++) updateCar(q[0]+Math.random()*4e-5,q[1]+Math.random()*4e-5,(rh+180)%360,null); return Math.abs(angDiff(carMarker._deg,rh))<10; }));
+ok('Carro queda en la parte baja de la pantalla (camino al frente)', await E(()=>{ const ll=carMarker.getLatLng(); map.setBearing(-carMarker._deg); map.panTo(lookAhead(ll.lat,ll.lng,carMarker._deg),{animate:false}); return map.latLngToContainerPoint(ll).y > map.getSize().y*0.6; }));
 // simular avance por la ruta
 await E(()=>{ const c=ROUTES[SEL].coords; const q=c[Math.floor(c.length*0.1)]; ME={lat:q[0],lon:q[1]}; updateCar(q[0],q[1],null,15); paintNav(); });
 const nb=await p.textContent('#navbar');

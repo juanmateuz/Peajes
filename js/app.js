@@ -311,15 +311,38 @@ $('swap').onclick=()=>{ [A,B]=[B,A]; const v=$('orig').value; $('orig').value=$(
 function bearing(a,b){ const r=Math.PI/180, y=Math.sin((b[1]-a[1])*r)*Math.cos(b[0]*r), x=Math.cos(a[0]*r)*Math.sin(b[0]*r)-Math.sin(a[0]*r)*Math.cos(b[0]*r)*Math.cos((b[1]-a[1])*r); return (Math.atan2(y,x)/r+360)%360; }
 // diferencia angular en (-180,180]
 const angDiff=(a,b)=>((b-a+540)%360)-180;
+// Dirección de la ruta seleccionada en tu posición: hacia dónde sigue el camino (~60 m adelante)
+function routeHeadingAt(p){
+  const r=ROUTES[SEL]; if(!r||!r.coords||r.coords.length<2) return null;
+  const c=r.coords; let best=1e12, bi=1, bf=0;
+  const from=Math.max(1,(routeHeadingAt._i||1)-400), to=Math.min(c.length,(routeHeadingAt._i||1)+400);
+  const scan=(a,b)=>{ for(let i=a;i<b;i++){ const [d,f]=segDist(p,c[i-1],c[i]); if(d<best){ best=d; bi=i; bf=f; } } };
+  scan(from,to); if(best>80) scan(1,c.length);           // búsqueda local primero (rápida), completa si no está cerca
+  if(best>80) return null;                                 // fuera de la ruta: no usar
+  routeHeadingAt._i=bi;
+  const a=c[bi-1], b=c[bi], cur=[a[0]+(b[0]-a[0])*bf, a[1]+(b[1]-a[1])*bf];
+  let k=bi, acc=hav(cur,c[k]); while(k<c.length-1 && acc<60){ acc+=hav(c[k],c[k+1]); k++; }
+  if(hav(cur,c[k])<5) return null;
+  return {deg:bearing(cur,c[k]), dist:best, pt:cur};
+}
+// Punto adelante del carro para que en modo viaje se vea más camino al frente (el carro queda más abajo)
+function lookAhead(lat,lon,deg){
+  const z=map.getZoom(), mpp=40075016*Math.cos(lat*Math.PI/180)/Math.pow(2,z+8), px=map.getSize().y*0.22;
+  const q=destPt([lat,lon],deg||0,mpp*px); return L.latLng(q[0],q[1]);
+}
 function updateCar(lat,lon,heading,speed){
   let raw=heading;
   const slow=speed!=null && !isNaN(speed) && speed<1.5;          // < 5 km/h: el rumbo del GPS no es confiable
-  if((raw==null||isNaN(raw)) && lastMe && hav(lastMe,[lat,lon])>12) raw=bearing(lastMe,[lat,lon]);
+  const onRoute=ROUTES.length?routeHeadingAt([lat,lon]):null;
+  if(onRoute){ raw=onRoute.deg; speed=null; }               // sobre la ruta: siempre hacia adelante del camino
+  else if(speed==null && (raw==null||isNaN(raw))){            // sin velocidad reportada: solo si el desplazamiento es claro
+    if(lastMe && hav(lastMe,[lat,lon])>25) raw=bearing(lastMe,[lat,lon]); }
+  else if((raw==null||isNaN(raw)) && lastMe && hav(lastMe,[lat,lon])>12) raw=bearing(lastMe,[lat,lon]);
   const prev=carMarker&&carMarker._deg!=null?carMarker._deg:null;
   let deg;
   if(raw==null||isNaN(raw)||slow) deg=prev!=null?prev:0;            // detenido o sin dato: conservar rumbo
   else if(prev==null) deg=raw;
-  else { const d=angDiff(prev,raw); deg=Math.abs(d)<4?prev:(prev+d*0.35+360)%360; }   // suavizado + zona muerta
+  else { const d=angDiff(prev,raw); deg=onRoute?((prev+d*0.6+360)%360):(Math.abs(d)<4?prev:(prev+d*0.35+360)%360); }   // suavizado + zona muerta
   if(!lastMe || hav(lastMe,[lat,lon])>3) lastMe=[lat,lon];        // punto previo para estimar rumbo
   if(!carMarker){ carMarker=L.marker([lat,lon],{icon:carIcon(deg),zIndexOffset:5000}).addTo(map); }
   else carMarker.setLatLng([lat,lon]);
@@ -378,7 +401,7 @@ function paintLive(){ $('fabLive').classList.toggle('on',LIVE); $('liveTxt').tex
 function stopWatch(){ if(watchId!=null){ navigator.geolocation.clearWatch(watchId); watchId=null; } }
 function startWatch(){ if(!LIVE) return; if(watchId!=null) return;
   watchId=navigator.geolocation.watchPosition(p=>{ ME={lat:p.coords.latitude,lon:p.coords.longitude}; updateCar(ME.lat,ME.lon,p.coords.heading,p.coords.speed);
-    if(A&&A.isMe){ A.lat=ME.lat; A.lon=ME.lon; } if(FOLLOW) map.panTo([ME.lat,ME.lon],{animate:true,duration:0.9,easeLinearity:1,noMoveStart:true}); checkOffRoute(ME.lat,ME.lon,p.coords.accuracy||50); paintNav(); },()=>{}, {enableHighAccuracy:true,maximumAge:5000}); }
+    if(A&&A.isMe){ A.lat=ME.lat; A.lon=ME.lon; } if(FOLLOW) map.panTo(NAV?lookAhead(ME.lat,ME.lon,carMarker?carMarker._deg:0):[ME.lat,ME.lon],{animate:true,duration:0.9,easeLinearity:1,noMoveStart:true}); checkOffRoute(ME.lat,ME.lon,p.coords.accuracy||50); paintNav(); },()=>{}, {enableHighAccuracy:true,maximumAge:5000}); }
 let PRIO='fast';
 try{ const sp=localStorage.getItem('peajes_prio'); if(sp) PRIO=sp; }catch(e){}
 function paintPrio(){ document.querySelectorAll('#prio .chip').forEach(c=>c.classList.toggle('on',c.dataset.p===PRIO)); }
@@ -577,7 +600,13 @@ map.on('zoomend',()=>syncBubbles());
 function centerCar(){
   if(!carMarker){ if(LIVE) locate(false); else toast('Activa “En vivo” para ver tu ubicación'); return; }
   setFollow(true);
-  map.setView(carMarker.getLatLng(), Math.max(map.getZoom(),18), {animate:true});
+  const ll=carMarker.getLatLng();
+  if(NAV){
+    // al iniciar: carro mirando hacia donde sigue la ruta, mapa en modo rumbo, carro abajo con camino al frente
+    const rh=routeHeadingAt([ll.lat,ll.lng]); if(rh){ carMarker._deg=rh.deg; refreshCarRot(); }
+    if(CAN_ROTATE){ HEADUP=true; stopBearingAnim(); map.setBearing(-(carMarker._deg||0)); paintCmp(); }
+    map.setView(ll,17,{animate:false}); map.panTo(lookAhead(ll.lat,ll.lng,carMarker._deg),{animate:false});
+  } else map.setView(ll, Math.max(map.getZoom(),18), {animate:true});
   if(innerWidth<860) scrollTo({top:0,behavior:'smooth'});
 }
 map.on('dragstart',()=>setFollow(false));
